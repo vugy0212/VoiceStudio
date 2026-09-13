@@ -21,6 +21,8 @@ node_modules/
 node_modules
 .turbo/
 bun.lockb
+.bun-cache/
+.kilo/
 frontend/src-tauri/target/
 
 # ─────────────────────────────────────────────────────────────────────────

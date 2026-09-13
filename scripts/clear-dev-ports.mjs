@@ -59,7 +59,7 @@ function unixListeners(ports) {
 }
 
 function windowsListeners(ports) {
-  const result = spawnSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8" });
+  const result = spawnSync("netstat", ["-ano"], { encoding: "utf8" });
   if (result.error) throw result.error;
   return parseWindowsListeners(result.stdout, ports).filter(validPid);
 }
