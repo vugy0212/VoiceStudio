@@ -34,6 +34,7 @@ export default defineConfig({
     port: Number(process.env.OMNIVOICE_UI_PORT) || 3901,
     strictPort: true,
     host: false,
+    allowedHosts: true,
     watch: {
       ignored: ['**/src-tauri/**'],
     },

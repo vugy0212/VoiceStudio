@@ -182,3 +182,15 @@ backend/assets/samples/demo/dubbing/*.src.wav
 
 # Generated Windows MSI diagnostic logs and installer payloads
 /wix-diagnostic-artifacts/
+
+# Mobile builds & binary packages
+*.apk
+*.aab
+mobile_app/*.apk
+mobile_app/voicestudio_mobile/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Microsoft Office temporary lock files
+~$*
+
