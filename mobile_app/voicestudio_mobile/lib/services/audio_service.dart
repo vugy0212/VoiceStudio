@@ -19,10 +19,13 @@ class AudioService {
   Duration? get totalDuration => _player.duration;
   bool get isPlaying => _player.playing;
   bool get isStreamingActive => _isStreamingActive;
+  String? _currentSource;
+  String? get currentSource => _currentSource;
 
   Future<void> playFile(File file) async {
     _isStreamingActive = false;
     _streamPlaylist = null;
+    _currentSource = file.path;
     await _player.stop();
     await _player.setFilePath(file.path);
     await _player.play();
@@ -31,6 +34,7 @@ class AudioService {
   Future<void> playUrl(String url, {Map<String, String>? headers}) async {
     _isStreamingActive = false;
     _streamPlaylist = null;
+    _currentSource = url;
     await _player.stop();
     await _player.setUrl(url, headers: headers);
     await _player.play();

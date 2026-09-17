@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 
 class NeonWaveformWidget extends StatefulWidget {
   final bool isPlaying;
+  final double height;
 
   const NeonWaveformWidget({
     super.key,
     required this.isPlaying,
+    this.height = 54,
   });
 
   @override
@@ -22,7 +24,7 @@ class _NeonWaveformWidgetState extends State<NeonWaveformWidget>
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 1400),
     );
     if (widget.isPlaying) {
       _animController.repeat();
@@ -53,9 +55,9 @@ class _NeonWaveformWidgetState extends State<NeonWaveformWidget>
       animation: _animController,
       builder: (context, child) {
         return SizedBox(
-          height: 62,
+          height: widget.height,
           child: CustomPaint(
-            painter: _WaveformPainter(
+            painter: _SpectrumPainter(
               progress: _animController.value,
               isPlaying: widget.isPlaying,
             ),
@@ -67,71 +69,101 @@ class _NeonWaveformWidgetState extends State<NeonWaveformWidget>
   }
 }
 
-class _WaveformPainter extends CustomPainter {
+class _SpectrumPainter extends CustomPainter {
   final double progress;
   final bool isPlaying;
 
-  _WaveformPainter({required this.progress, required this.isPlaying});
+  _SpectrumPainter({required this.progress, required this.isPlaying});
 
   @override
   void paint(Canvas canvas, Size size) {
     final midY = size.height / 2;
     final width = size.width;
-
-    final path = Path();
-    final points = 75;
-
-    final glowPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round;
-
-    final mainPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round;
+    const points = 80;
 
     final shader = const LinearGradient(
       colors: [
         Color(0xFF00E5FF), // Electric Cyan
-        Color(0xFF00B0FF),
-        Color(0xFFB388FF),
+        Color(0xFF00B0FF), // Neon Blue
+        Color(0xFFB388FF), // Lavender
         Color(0xFFC040FD), // Electric Purple/Magenta
       ],
-      stops: [0.0, 0.4, 0.7, 1.0],
+      stops: [0.0, 0.35, 0.7, 1.0],
     ).createShader(Rect.fromLTWH(0, 0, width, size.height));
 
-    glowPaint.shader = shader;
-    glowPaint.maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
-    mainPaint.shader = shader;
+    final secondaryShader = const LinearGradient(
+      colors: [
+        Color(0x8000E5FF),
+        Color(0x80B388FF),
+        Color(0x80C040FD),
+      ],
+    ).createShader(Rect.fromLTWH(0, 0, width, size.height));
 
-    path.moveTo(0, midY);
+    // Glow paint for intense neon halo
+    final glowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.5
+      ..strokeCap = StrokeCap.round
+      ..shader = shader
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
+
+    // Sharp foreground neon line
+    final mainPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..shader = shader;
+
+    // Secondary background harmonic wave
+    final secondaryPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round
+      ..shader = secondaryShader;
+
+    final primaryPath = Path();
+    final secondaryPath = Path();
+
+    final phase = isPlaying ? (progress * 2 * math.pi) : 0.0;
+    final maxAmp = size.height * (isPlaying ? 0.44 : 0.12);
 
     for (int i = 0; i <= points; i++) {
-      final x = (i / points) * width;
-      // Envelope: tapers near left and right edges like in mockup
-      final envelope = math.sin((i / points) * math.pi);
+      final normX = i / points;
+      final x = normX * width;
+      // Envelope: natural taper at edges
+      final envelope = math.sin(normX * math.pi);
 
-      final phase = isPlaying ? (progress * 2 * math.pi) : 0.0;
-      final freq1 = math.sin((i * 0.45) + phase);
-      final freq2 = math.cos((i * 0.85) - (phase * 0.7));
-      final amp = (freq1 * 0.65 + freq2 * 0.35) * (size.height * 0.44) * envelope;
+      // Primary wave
+      final f1 = math.sin((i * 0.42) + phase);
+      final f2 = math.cos((i * 0.82) - (phase * 0.7));
+      final amp1 = (f1 * 0.65 + f2 * 0.35) * maxAmp * envelope;
+      final y1 = midY + amp1;
 
-      final y = midY + amp;
+      // Secondary wave (harmonic counter-phase)
+      final sf1 = math.sin((i * 0.55) - (phase * 1.3));
+      final sf2 = math.cos((i * 0.35) + (phase * 0.9));
+      final amp2 = (sf1 * 0.55 + sf2 * 0.45) * (maxAmp * 0.65) * envelope;
+      final y2 = midY + amp2;
+
       if (i == 0) {
-        path.moveTo(x, y);
+        primaryPath.moveTo(x, y1);
+        secondaryPath.moveTo(x, y2);
       } else {
-        path.lineTo(x, y);
+        primaryPath.lineTo(x, y1);
+        secondaryPath.lineTo(x, y2);
       }
     }
 
-    // Draw neon glow pass first, then crisp sharp pass on top
-    canvas.drawPath(path, glowPaint);
-    canvas.drawPath(path, mainPaint);
+    // Draw secondary harmonic line first
+    canvas.drawPath(secondaryPath, secondaryPaint);
+    // Draw neon halo glow pass
+    canvas.drawPath(primaryPath, glowPaint);
+    // Draw crisp sharp neon line on top
+    canvas.drawPath(primaryPath, mainPaint);
   }
 
   @override
-  bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
+  bool shouldRepaint(covariant _SpectrumPainter oldDelegate) {
     return oldDelegate.progress != progress || oldDelegate.isPlaying != isPlaying;
   }
 }

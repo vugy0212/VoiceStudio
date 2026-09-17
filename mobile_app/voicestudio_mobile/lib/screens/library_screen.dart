@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../config/theme.dart';
 import '../state/app_state.dart';
 import '../models/saved_audio.dart';
+import '../widgets/saved_audio_detail_modal.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -158,6 +159,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       return _LibraryItemCard(
                         item: item,
                         isPlaying: isPlaying,
+                        onTap: () => SavedAudioDetailModal.show(context, item),
                         onPlayToggle: () async {
                           if (isPlaying) {
                             await state.audio.pause();
@@ -232,6 +234,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 class _LibraryItemCard extends StatelessWidget {
   final SavedAudio item;
   final bool isPlaying;
+  final VoidCallback onTap;
   final VoidCallback onPlayToggle;
   final VoidCallback onToggleFavorite;
   final VoidCallback onDelete;
@@ -240,6 +243,7 @@ class _LibraryItemCard extends StatelessWidget {
   const _LibraryItemCard({
     required this.item,
     required this.isPlaying,
+    required this.onTap,
     required this.onPlayToggle,
     required this.onToggleFavorite,
     required this.onDelete,
@@ -250,8 +254,11 @@ class _LibraryItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final fileExists = File(item.filePath).existsSync();
 
-    return Container(
-      padding: const EdgeInsets.all(14),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isPlaying ? AppTheme.surfaceHighlight : AppTheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -314,18 +321,22 @@ class _LibraryItemCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppTheme.accentCyan.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            item.profileName,
-                            style: const TextStyle(
-                              color: AppTheme.accentCyan,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentCyan.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              item.profileName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppTheme.accentCyan,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
@@ -397,16 +408,25 @@ class _LibraryItemCard extends StatelessWidget {
                 color: AppTheme.surfaceElevated.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(
-                item.text,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11.5),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11.5),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.open_in_full_rounded, size: 13, color: AppTheme.accentCyan),
+                ],
               ),
             ),
           ],
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

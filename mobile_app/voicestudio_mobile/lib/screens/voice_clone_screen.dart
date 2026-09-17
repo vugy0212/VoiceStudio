@@ -190,17 +190,32 @@ class _VoiceCloneScreenState extends State<VoiceCloneScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Voice Profile'),
-        content: Text('Are you sure you want to permanently delete "${profile.name}"?'),
+        backgroundColor: AppTheme.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            SizedBox(width: 8),
+            Text('Obriši glasovni profil', style: TextStyle(color: AppTheme.textPrimary, fontSize: 17)),
+          ],
+        ),
+        content: Text(
+          'Jeste li sigurni da želite trajno obrisati profil "${profile.name}"?\n\nOva radnja se ne može poništiti.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13.5),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: const Text('Odustani', style: TextStyle(color: AppTheme.textMuted)),
           ),
-          TextButton(
+          ElevatedButton.icon(
+            icon: const Icon(Icons.delete_forever_rounded, size: 18),
+            label: const Text('Obriši'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Delete'),
           ),
         ],
       ),
@@ -213,7 +228,7 @@ class _VoiceCloneScreenState extends State<VoiceCloneScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Deleted voice profile "${profile.name}"'),
+              content: Text('Glasovni profil "${profile.name}" je uspješno obrisan.'),
               backgroundColor: AppTheme.primary,
             ),
           );
@@ -222,8 +237,8 @@ class _VoiceCloneScreenState extends State<VoiceCloneScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to delete profile: $e'),
-              backgroundColor: AppTheme.primary,
+              content: Text('Greška pri brisanju profila: $e'),
+              backgroundColor: Colors.redAccent,
             ),
           );
         }
@@ -530,8 +545,8 @@ class _VoiceCloneScreenState extends State<VoiceCloneScreen> {
                         onPressed: () => _playProfileSample(profile),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppTheme.textMuted),
-                        tooltip: 'Delete Profile',
+                        icon: const Icon(Icons.delete_outline_rounded, size: 22, color: Colors.redAccent),
+                        tooltip: 'Obriši profil',
                         visualDensity: VisualDensity.compact,
                         onPressed: () => _confirmDeleteProfile(profile),
                       ),

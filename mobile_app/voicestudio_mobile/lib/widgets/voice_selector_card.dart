@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../config/theme.dart';
 import '../models/voice_profile.dart';
+import 'manage_voices_modal.dart';
 
 class VoiceSelectorCard extends StatelessWidget {
   final List<VoiceProfile> profiles;
@@ -8,6 +10,7 @@ class VoiceSelectorCard extends StatelessWidget {
   final ValueChanged<VoiceProfile> onSelect;
   final VoidCallback onAddVoice;
   final void Function(VoiceProfile)? onPreviewVoice;
+  final VoidCallback? onManageVoices;
   final bool isLoading;
 
   const VoiceSelectorCard({
@@ -17,6 +20,7 @@ class VoiceSelectorCard extends StatelessWidget {
     required this.onSelect,
     required this.onAddVoice,
     this.onPreviewVoice,
+    this.onManageVoices,
     this.isLoading = false,
   });
 
@@ -31,37 +35,77 @@ class VoiceSelectorCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Voice Profile',
+                'Glasovni profil',
                 style: TextStyle(
                   color: AppTheme.textPrimary,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              GestureDetector(
-                onTap: onAddVoice,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF162536),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.accentCyan.withValues(alpha: 0.4)),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.graphic_eq_rounded, size: 14, color: AppTheme.accentCyan),
-                      SizedBox(width: 4),
-                      Text(
-                        'Clone New Voice',
-                        style: TextStyle(
-                          color: AppTheme.accentCyan,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (profiles.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          if (onManageVoices != null) {
+                            onManageVoices!();
+                          } else {
+                            ManageVoicesModal.show(context);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceHighlight,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.tune_rounded, size: 13, color: AppTheme.textSecondary),
+                              SizedBox(width: 4),
+                              Text(
+                                'Upravljaj',
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ],
+                    ),
+                  GestureDetector(
+                    onTap: onAddVoice,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF162536),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.accentCyan.withValues(alpha: 0.4)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.graphic_eq_rounded, size: 14, color: AppTheme.accentCyan),
+                          SizedBox(width: 4),
+                          Text(
+                            'Kloniraj novi',
+                            style: TextStyle(
+                              color: AppTheme.accentCyan,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
@@ -147,6 +191,10 @@ class VoiceSelectorCard extends StatelessWidget {
 
               return GestureDetector(
                 onTap: () => onSelect(profile),
+                onLongPress: () {
+                  HapticFeedback.mediumImpact();
+                  ManageVoicesModal.show(context, initialSelectedId: profile.id);
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   width: 96,
