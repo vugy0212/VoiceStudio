@@ -179,8 +179,13 @@ class ApiClient {
       }
       return resProfiles.statusCode == 200 && resProfiles.data is List;
     } on DioException catch (e) {
-      if (e.response?.statusCode == 302 || e.type == DioExceptionType.badResponse) {
+      final status = e.response?.statusCode;
+      if (status == 302) {
         throw Exception('Cloudflare odbio zahtjev (302 PIN redirect). Dodajte CF Service Token.');
+      } else if (status == 502) {
+        throw Exception('Cloudflare tunel radi, ali VoiceStudio poslužitelj nije pokrenut (502).');
+      } else if (e.type == DioExceptionType.badResponse) {
+        throw Exception('Poslužitelj vratio grešku ($status).');
       }
       return false;
     } catch (_) {
