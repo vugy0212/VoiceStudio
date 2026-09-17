@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import '../config/theme.dart';
 import '../state/app_state.dart';
 import '../models/voice_profile.dart';
+import '../services/recorder_service.dart';
 
 class VoiceCloneScreen extends StatefulWidget {
   const VoiceCloneScreen({super.key});
@@ -22,16 +24,27 @@ class _VoiceCloneScreenState extends State<VoiceCloneScreen> {
   String? _recordedFilePath;
   bool _isSaving = false;
   String? _previewingProfileId;
+  RecorderService? _recorder;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _recorder = context.read<AppState>().recorder;
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _recordTimer?.cancel();
+    if (_isRecording && _recorder != null) {
+      _recorder!.stopRecording();
+    }
     super.dispose();
   }
 
   Future<void> _toggleRecording() async {
     final state = context.read<AppState>();
+    HapticFeedback.lightImpact();
 
     if (_isRecording) {
       // Stop recording
@@ -55,9 +68,23 @@ class _VoiceCloneScreenState extends State<VoiceCloneScreen> {
           _recordedFilePath = null;
         });
         _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (!mounted) {
+            timer.cancel();
+            return;
+          }
           setState(() {
             _recordSeconds++;
           });
+          // Auto-stop at 20 seconds maximum (optimal clone duration is 5-15s)
+          if (_recordSeconds >= 20) {
+            _toggleRecording();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Dosegnut maksimalni limit snimanja (20s). Snimka spremljena.'),
+                backgroundColor: AppTheme.accentCyan,
+              ),
+            );
+          }
         });
       } catch (e) {
         if (mounted) {

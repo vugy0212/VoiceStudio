@@ -9,6 +9,7 @@ import '../services/storage_service.dart';
 import '../services/api_client.dart';
 import '../services/audio_service.dart';
 import '../services/recorder_service.dart';
+import '../utils/wav_utils.dart';
 
 class AppState extends ChangeNotifier {
   final StorageService storage;
@@ -121,6 +122,7 @@ class AppState extends ChangeNotifier {
     _isInitialized = true;
     notifyListeners();
 
+    unawaited(WavUtils.cleanOldTempFiles());
     await testConnectionAndRefresh();
   }
 
@@ -285,7 +287,7 @@ class AppState extends ChangeNotifier {
             notifyListeners();
           },
         );
-        await audio.finalizeStreaming(result.audioFile);
+        await audio.finalizeStreaming(result.audioFile, chunkFiles: result.chunkFiles);
       } else {
         result = await api.generateSpeech(
           text: text,

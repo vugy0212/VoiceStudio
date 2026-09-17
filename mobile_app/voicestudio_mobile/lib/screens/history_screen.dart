@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:just_audio/just_audio.dart';
 import '../config/theme.dart';
 import '../state/app_state.dart';
 import '../models/generation_history.dart';
@@ -13,9 +15,37 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   String? _currentlyPlayingId;
+  StreamSubscription<PlayerState>? _playerSub;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playerSub?.cancel();
+    final audio = context.read<AppState>().audio;
+    _playerSub = audio.playerStateStream.listen((playerState) {
+      if (!mounted) return;
+      if (!playerState.playing || playerState.processingState == ProcessingState.completed) {
+        if (_currentlyPlayingId != null) {
+          setState(() => _currentlyPlayingId = null);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _playerSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _playHistoryItem(GenerationHistory item) async {
     final state = context.read<AppState>();
+    if (_currentlyPlayingId == item.id) {
+      await state.audio.pause();
+      setState(() => _currentlyPlayingId = null);
+      return;
+    }
+
     final url = state.api.getAudioFileUrl(item.filename);
     final headers = state.api.getAuthHeaders();
 
@@ -23,8 +53,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     try {
       await state.audio.playUrl(url, headers: headers);
     } catch (_) {
-      // Ignored
-    } finally {
       if (mounted) setState(() => _currentlyPlayingId = null);
     }
   }

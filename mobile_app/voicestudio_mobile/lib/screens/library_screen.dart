@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:share_plus/share_plus.dart';
 import '../config/theme.dart';
 import '../state/app_state.dart';
@@ -17,6 +19,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
   String _searchQuery = '';
   bool _onlyFavorites = false;
   String? _currentlyPlayingId;
+  StreamSubscription<PlayerState>? _playerSub;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playerSub?.cancel();
+    final audio = context.read<AppState>().audio;
+    _playerSub = audio.playerStateStream.listen((playerState) {
+      if (!mounted) return;
+      if (!playerState.playing || playerState.processingState == ProcessingState.completed) {
+        if (_currentlyPlayingId != null) {
+          setState(() => _currentlyPlayingId = null);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _playerSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -224,6 +248,8 @@ class _LibraryItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fileExists = File(item.filePath).existsSync();
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -249,15 +275,21 @@ class _LibraryItemCard extends StatelessWidget {
                     gradient: LinearGradient(
                       colors: isPlaying
                           ? [AppTheme.primaryNeon, AppTheme.primary]
-                          : [AppTheme.surfaceElevated, AppTheme.surfaceHighlight],
+                          : fileExists
+                              ? [AppTheme.surfaceElevated, AppTheme.surfaceHighlight]
+                              : [AppTheme.surface, AppTheme.surfaceElevated],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: isPlaying ? Colors.white : AppTheme.primary,
+                    isPlaying
+                        ? Icons.pause_rounded
+                        : (fileExists ? Icons.play_arrow_rounded : Icons.broken_image_rounded),
+                    color: isPlaying
+                        ? Colors.white
+                        : (fileExists ? AppTheme.primary : AppTheme.textMuted),
                     size: 22,
                   ),
                 ),
@@ -297,6 +329,27 @@ class _LibraryItemCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (!fileExists) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.warning_amber_rounded, size: 11, color: Colors.redAccent),
+                                SizedBox(width: 2),
+                                Text(
+                                  'Missing',
+                                  style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         if (item.duration > 0) ...[
                           const SizedBox(width: 6),
                           Text(

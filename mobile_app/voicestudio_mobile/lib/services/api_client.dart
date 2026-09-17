@@ -14,12 +14,14 @@ class GenerateResult {
   final String? audioPath;
   final double? duration;
   final double? genTime;
+  final List<File>? chunkFiles;
 
   GenerateResult({
     required this.audioFile,
     this.audioPath,
     this.duration,
     this.genTime,
+    this.chunkFiles,
   });
 }
 
@@ -345,6 +347,7 @@ class ApiClient {
       int totalChunks = 1;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final List<Uint8List> allPcmBytes = [];
+      final List<File> chunkFiles = [];
       String? completedAudioPath;
       double? duration;
       double? genTime;
@@ -376,6 +379,7 @@ class ApiClient {
                 seq: seq,
                 sampleRate: sampleRate,
               );
+              chunkFiles.add(chunkWav);
               onChunkReady(seq, chunkWav, totalChunks);
             }
           } else if (type == 'done') {
@@ -415,6 +419,7 @@ class ApiClient {
         audioPath: completedAudioPath,
         duration: duration ?? (totalLength / (sampleRate * 2)),
         genTime: genTime,
+        chunkFiles: chunkFiles,
       );
     } on DioException catch (e) {
       if (e.response?.statusCode == 302 || e.message?.contains('302') == true) {

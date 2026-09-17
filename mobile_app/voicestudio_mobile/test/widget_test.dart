@@ -7,9 +7,38 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voicestudio_mobile/widgets/text_input_card.dart';
 
 void main() {
-  testWidgets('App smoke test', (WidgetTester tester) async {
-    expect(find.byType(MaterialApp), findsNothing);
+  testWidgets('TextInputCard updates word and character counts dynamically', (WidgetTester tester) async {
+    final controller = TextEditingController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TextInputCard(
+            controller: controller,
+            selectedLanguage: 'Auto',
+            onLanguageChanged: (_) {},
+            onClear: () {},
+          ),
+        ),
+      ),
+    );
+
+    // Initial state: 0 words • 0 chars
+    expect(find.text('0 words • 0 chars'), findsOneWidget);
+
+    // Type text into controller
+    controller.text = 'Bok svijete, ovo je test';
+    await tester.pump();
+
+    // Verifies reactive counter
+    expect(find.text('5 words • 24 chars'), findsOneWidget);
+    expect(find.textContaining('estimated'), findsOneWidget);
+
+    // Verify only ONE Paste button exists
+    expect(find.text('Paste'), findsOneWidget);
+    expect(find.byTooltip('Paste from clipboard'), findsNothing);
   });
 }

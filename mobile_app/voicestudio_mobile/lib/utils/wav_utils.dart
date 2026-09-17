@@ -49,4 +49,31 @@ class WavUtils {
     final file = File('${tempDir.path}/${prefix}_chunk_$seq.wav');
     return await file.writeAsBytes(wavBytes, flush: true);
   }
+
+  /// Cleans temporary audio files created during streaming or previewing older than [maxAgeHours]
+  static Future<void> cleanOldTempFiles({int maxAgeHours = 4}) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final entities = tempDir.listSync();
+      final cutoff = DateTime.now().subtract(Duration(hours: maxAgeHours));
+
+      for (final entity in entities) {
+        if (entity is File) {
+          final filename = entity.uri.pathSegments.last;
+          if (filename.startsWith('stream_') ||
+              filename.startsWith('synth_') ||
+              filename.startsWith('voice_sample_')) {
+            try {
+              final stat = entity.statSync();
+              if (stat.modified.isBefore(cutoff)) {
+                entity.deleteSync();
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {
+      // Non-critical cleanup
+    }
+  }
 }

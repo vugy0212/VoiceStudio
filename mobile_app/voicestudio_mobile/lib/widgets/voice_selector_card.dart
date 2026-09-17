@@ -8,6 +8,7 @@ class VoiceSelectorCard extends StatelessWidget {
   final ValueChanged<VoiceProfile> onSelect;
   final VoidCallback onAddVoice;
   final void Function(VoiceProfile)? onPreviewVoice;
+  final bool isLoading;
 
   const VoiceSelectorCard({
     super.key,
@@ -16,6 +17,7 @@ class VoiceSelectorCard extends StatelessWidget {
     required this.onSelect,
     required this.onAddVoice,
     this.onPreviewVoice,
+    this.isLoading = false,
   });
 
   @override
@@ -67,53 +69,75 @@ class VoiceSelectorCard extends StatelessWidget {
         const SizedBox(height: 10),
         SizedBox(
           height: 106,
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            scrollDirection: Axis.horizontal,
-            itemCount: profiles.length + 1,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              if (index == profiles.length) {
-                // "+ Add Voice" Card
-                return GestureDetector(
-                  onTap: onAddVoice,
-                  child: Container(
-                    width: 86,
+          child: isLoading && profiles.isEmpty
+              ? ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 3,
+                  separatorBuilder: (_, _) => const SizedBox(width: 10),
+                  itemBuilder: (_, _) => Container(
+                    width: 110,
                     decoration: BoxDecoration(
                       color: AppTheme.surfaceElevated,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: AppTheme.border,
-                        style: BorderStyle.solid,
-                        width: 1,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentCyan),
                       ),
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.mic, color: AppTheme.primary, size: 20),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'New Voice',
-                          style: TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
-                );
-              }
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: profiles.length + 1,
+                  separatorBuilder: (_, _) => const SizedBox(width: 10),
+                  itemBuilder: (context, index) {
+                    if (index == profiles.length) {
+                      // "+ Add Voice" Card
+                      return GestureDetector(
+                        onTap: onAddVoice,
+                        child: Container(
+                          width: 86,
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceElevated,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppTheme.border,
+                              style: BorderStyle.solid,
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary.withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.mic, color: AppTheme.primary, size: 20),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'New Voice',
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
 
               final profile = profiles[index];
               final isSelected = selectedProfile?.id == profile.id;

@@ -57,7 +57,7 @@ class AudioService {
   }
 
   /// Finalize streaming and prepare the complete WAV for scrubber/replay
-  Future<void> finalizeStreaming(File completeFile) async {
+  Future<void> finalizeStreaming(File completeFile, {List<File>? chunkFiles}) async {
     _pendingCompleteFile = completeFile;
     _isStreamingActive = false;
 
@@ -70,15 +70,31 @@ class AudioService {
       if (wasPlaying) {
         await _player.play();
       }
-    } catch (_) {
+      _streamPlaylist = null;
+      _cleanupChunks(chunkFiles);
+    } catch (e) {
+      // Log error for debugging streaming transitions
       // Fallback: wait for playlist end
       _player.playerStateStream.firstWhere(
         (state) => state.processingState == ProcessingState.completed,
       ).then((_) async {
         if (_pendingCompleteFile != null && !_player.playing) {
           await _player.setFilePath(_pendingCompleteFile!.path);
+          _streamPlaylist = null;
+          _cleanupChunks(chunkFiles);
         }
-      });
+      }).catchError((_) {});
+    }
+  }
+
+  void _cleanupChunks(List<File>? chunks) {
+    if (chunks == null || chunks.isEmpty) return;
+    for (final file in chunks) {
+      try {
+        if (file.existsSync()) {
+          file.deleteSync();
+        }
+      } catch (_) {}
     }
   }
 

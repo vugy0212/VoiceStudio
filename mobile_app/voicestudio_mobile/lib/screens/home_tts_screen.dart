@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../state/app_state.dart';
 import '../widgets/connection_badge.dart';
 import '../widgets/voice_selector_card.dart';
 import '../widgets/text_input_card.dart';
+import '../widgets/voice_styling_card.dart';
 import '../widgets/neon_audio_player.dart';
 import '../widgets/speechify_reader_modal.dart';
 import 'voice_clone_screen.dart';
@@ -33,13 +35,14 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter some text to synthesize.'),
+          content: Text('Unesite tekst za sintezu govora.'),
           backgroundColor: AppTheme.primary,
         ),
       );
       return;
     }
 
+    HapticFeedback.lightImpact();
     final state = context.read<AppState>();
     state.generateSpeech(text);
   }
@@ -167,6 +170,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
             VoiceSelectorCard(
               profiles: state.profiles,
               selectedProfile: state.selectedProfile,
+              isLoading: state.isLoadingProfiles,
               onSelect: (profile) => state.selectProfile(profile),
               onAddVoice: () {
                 Navigator.of(context).push(
@@ -187,6 +191,20 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                   _textController.clear();
                   setState(() {});
                 },
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // 3. Voice Styling & Advanced Controls Card
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: VoiceStylingCard(
+                currentInstruct: state.instruct,
+                onInstructChanged: (instruct) => state.setInstruct(instruct),
+                currentSteps: state.steps,
+                onStepsChanged: (steps) => state.setSteps(steps),
+                currentGuidanceScale: state.guidanceScale,
+                onGuidanceScaleChanged: (scale) => state.setGuidanceScale(scale),
               ),
             ),
             const SizedBox(height: 14),
