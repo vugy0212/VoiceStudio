@@ -47,6 +47,7 @@ class _TextInputCardState extends State<TextInputCard> {
   Duration _duration = Duration.zero;
 
   final ScrollController _karaokeScrollController = ScrollController();
+  final GlobalKey _karaokeViewportKey = GlobalKey();
   final GlobalKey _activeWordKey = GlobalKey();
   int _lastScrolledWordIdx = -1;
 
@@ -70,7 +71,6 @@ class _TextInputCardState extends State<TextInputCard> {
             state.playing && state.processingState != ProcessingState.completed;
         setState(() {
           if (nowPlaying && !_isPlaying) {
-            // Automatically enter Karaoke follow mode whenever playback starts
             _manualEditOverride = false;
             _lastScrolledWordIdx = -1;
           }
@@ -80,7 +80,7 @@ class _TextInputCardState extends State<TextInputCard> {
 
       _positionSub = audio.positionStream.listen((pos) {
         if (!mounted) return;
-        if (_isPlaying || !_manualEditOverride) {
+        if (_isPlaying) {
           setState(() => _position = pos);
         }
       });
@@ -101,17 +101,37 @@ class _TextInputCardState extends State<TextInputCard> {
     super.dispose();
   }
 
-  void _scrollActiveWordIntoView(int activeIdx) {
+  /// Scrolls ONLY the internal [_karaokeScrollController] without touching the
+  /// outer screen's ListView, preventing any screen jumping on mobile!
+  void _scrollInnerKaraokeOnly(int activeIdx) {
     if (activeIdx < 0 || activeIdx == _lastScrolledWordIdx) return;
     _lastScrolledWordIdx = activeIdx;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final ctx = _activeWordKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          alignment: 0.38, // Drži aktivnu riječ u gornjoj/srednjoj trećini okvira
-          duration: const Duration(milliseconds: 220),
+      if (!mounted || !_karaokeScrollController.hasClients) return;
+      final wordBox =
+          _activeWordKey.currentContext?.findRenderObject() as RenderBox?;
+      final viewportBox =
+          _karaokeViewportKey.currentContext?.findRenderObject() as RenderBox?;
+      if (wordBox == null || viewportBox == null || !wordBox.attached) return;
+
+      final wordTopInViewport =
+          wordBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
+      final wordBottomInViewport = wordTopInViewport + wordBox.size.height;
+      final viewportHeight = viewportBox.size.height;
+
+      // Only scroll if the active word moves below 65% or above 15% of the inner box
+      if (wordBottomInViewport > viewportHeight * 0.68 ||
+          wordTopInViewport < viewportHeight * 0.12) {
+        final currentOffset = _karaokeScrollController.offset;
+        final targetOffset = (currentOffset +
+                wordTopInViewport -
+                (viewportHeight * 0.32))
+            .clamp(0.0, _karaokeScrollController.position.maxScrollExtent);
+
+        _karaokeScrollController.animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
         );
       }
@@ -125,8 +145,6 @@ class _TextInputCardState extends State<TextInputCard> {
     }
   }
 
-  /// Tokenizes [text] into words and line breaks with phonetic speaking weights
-  /// so each word maps to a [startFraction, endFraction] interval of the audio.
   List<_WordTimingToken> _buildWordTimings(String text) {
     final lines = text.split('\n');
     final rawWords = <String>[];
@@ -194,8 +212,7 @@ class _TextInputCardState extends State<TextInputCard> {
         final showKaraokeView =
             text.trim().isNotEmpty && _isPlaying && !_manualEditOverride;
 
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
+        return Container(
           decoration: BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(18),
@@ -203,17 +220,8 @@ class _TextInputCardState extends State<TextInputCard> {
               color: showKaraokeView
                   ? AppTheme.accentCyan.withValues(alpha: 0.75)
                   : const Color(0xFF2E3A52),
-              width: showKaraokeView ? 1.5 : 1.2,
+              width: 1.3,
             ),
-            boxShadow: showKaraokeView
-                ? [
-                    BoxShadow(
-                      color: AppTheme.accentCyan.withValues(alpha: 0.14),
-                      blurRadius: 16,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : null,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -221,7 +229,7 @@ class _TextInputCardState extends State<TextInputCard> {
               // Header inside card
               Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 child: Row(
                   children: [
                     Expanded(
@@ -241,13 +249,13 @@ class _TextInputCardState extends State<TextInputCard> {
                           Flexible(
                             child: Text(
                               showKaraokeView
-                                  ? 'Praćenje glasa uživo'
+                                  ? 'Praćenje glasa'
                                   : 'Tekst za sintezu',
                               style: TextStyle(
                                 color: showKaraokeView
                                     ? AppTheme.accentCyan
                                     : AppTheme.textPrimary,
-                                fontSize: 14,
+                                fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
                               ),
                               maxLines: 1,
@@ -257,10 +265,50 @@ class _TextInputCardState extends State<TextInputCard> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Explicit STOP button while playing
+                        if (_isPlaying) ...[
+                          GestureDetector(
+                            onTap: () async {
+                              HapticFeedback.mediumImpact();
+                              await appState.audio.stop();
+                              await appState.audio.seek(Duration.zero);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color:
+                                      Colors.redAccent.withValues(alpha: 0.6),
+                                  width: 1,
+                                ),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.stop_rounded,
+                                      size: 14, color: Colors.redAccent),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    'Stop',
+                                    style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        // Toggle Karaoke / Uredi
                         if ((_isPlaying || hasAudioReady) &&
                             text.trim().isNotEmpty) ...[
                           GestureDetector(
@@ -323,7 +371,7 @@ class _TextInputCardState extends State<TextInputCard> {
                             onTap: _pasteClipboard,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
+                                  horizontal: 9, vertical: 4),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF1E283C),
                                 borderRadius: BorderRadius.circular(8),
@@ -347,7 +395,7 @@ class _TextInputCardState extends State<TextInputCard> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                         ],
                         Container(
                           height: 28,
@@ -381,7 +429,7 @@ class _TextInputCardState extends State<TextInputCard> {
                           ),
                         ),
                         if (text.isNotEmpty && !showKaraokeView) ...[
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 2),
                           IconButton(
                             icon: const Icon(Icons.close_rounded,
                                 size: 17, color: AppTheme.textMuted),
@@ -397,30 +445,35 @@ class _TextInputCardState extends State<TextInputCard> {
               ),
               const Divider(height: 1, color: AppTheme.border),
 
+              // Body: Fixed-height Karaoke view (zero layout shift!) OR TextField
               if (showKaraokeView)
                 _buildKaraokeBody(context, text, wordCount, appState)
               else
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  child: TextField(
-                    controller: widget.controller,
-                    maxLines: 7,
-                    minLines: 4,
-                    style: const TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 15,
-                      height: 1.45,
-                    ),
-                    decoration: const InputDecoration(
-                      hintText:
-                          'Unesite ili zalijepite tekst za generiranje prirodnog govora...',
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      fillColor: Colors.transparent,
-                      filled: false,
-                      contentPadding: EdgeInsets.zero,
+                SizedBox(
+                  height: 156,
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    child: TextField(
+                      controller: widget.controller,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: const TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 15,
+                        height: 1.45,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText:
+                            'Unesite ili zalijepite tekst za generiranje prirodnog govora...',
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        fillColor: Colors.transparent,
+                        filled: false,
+                        contentPadding: EdgeInsets.zero,
+                      ),
                     ),
                   ),
                 ),
@@ -433,7 +486,7 @@ class _TextInputCardState extends State<TextInputCard> {
                   children: [
                     Text(
                       showKaraokeView
-                          ? 'Tekst se automatski pomiče • Dodirnite riječ za skok'
+                          ? 'Dodirnite riječ za skok • "Stop" za zaustavljanje'
                           : '$wordCount riječi • $charCount znakova',
                       style: TextStyle(
                         color: showKaraokeView
@@ -491,26 +544,28 @@ class _TextInputCardState extends State<TextInputCard> {
       activeIdx = tokens.length - 1;
     }
 
-    // Automatically scroll the active word into view when it advances!
-    _scrollActiveWordIntoView(activeIdx);
+    // Scroll ONLY the internal ScrollController (never the parent screen!)
+    _scrollInnerKaraokeOnly(activeIdx);
 
-    return Container(
-      constraints: const BoxConstraints(minHeight: 115, maxHeight: 195),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    return SizedBox(
+      key: _karaokeViewportKey,
+      height: 156,
       child: SingleChildScrollView(
         controller: _karaokeScrollController,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Wrap(
-          spacing: 5,
-          runSpacing: 8,
+          spacing: 4,
+          runSpacing: 6,
           children: List.generate(tokens.length, (idx) {
             final token = tokens[idx];
             if (token.isNewline) {
-              return const SizedBox(width: double.infinity, height: 6);
+              return const SizedBox(width: double.infinity, height: 4);
             }
 
             final isCurrent = idx == activeIdx;
             final isSpoken = idx < activeIdx;
 
+            // Constant padding and constant fontWeight prevent any line reflow or jumping!
             return GestureDetector(
               key: isCurrent ? _activeWordKey : null,
               onTap: () {
@@ -522,28 +577,16 @@ class _TextInputCardState extends State<TextInputCard> {
                   appState.audio.resume();
                 }
               },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 110),
-                padding: EdgeInsets.symmetric(
-                  horizontal: isCurrent ? 7 : 3,
-                  vertical: isCurrent ? 3 : 2,
-                ),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
                 decoration: BoxDecoration(
                   color: isCurrent
                       ? AppTheme.accentCyan
                       : (isSpoken
-                          ? AppTheme.accentCyan.withValues(alpha: 0.10)
+                          ? AppTheme.accentCyan.withValues(alpha: 0.12)
                           : Colors.transparent),
-                  borderRadius: BorderRadius.circular(7),
-                  boxShadow: isCurrent
-                      ? [
-                          BoxShadow(
-                            color: AppTheme.accentCyan.withValues(alpha: 0.45),
-                            blurRadius: 10,
-                            spreadRadius: 0.5,
-                          ),
-                        ]
-                      : null,
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   token.text,
@@ -553,10 +596,8 @@ class _TextInputCardState extends State<TextInputCard> {
                         : (isSpoken
                             ? AppTheme.textPrimary
                             : AppTheme.textSecondary),
-                    fontSize: 15.5,
-                    fontWeight: isCurrent
-                        ? FontWeight.w800
-                        : (isSpoken ? FontWeight.w600 : FontWeight.w400),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                     height: 1.3,
                   ),
                 ),

@@ -555,26 +555,48 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                       ),
                     ),
                   ),
-                  if (state.isGenerating) ...[
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: () {
-                        HapticFeedback.mediumImpact();
-                        state.cancelGeneration();
-                      },
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.redAccent.withValues(alpha: 0.2),
-                        foregroundColor: Colors.redAccent,
-                        padding: const EdgeInsets.all(14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5)),
-                        ),
-                      ),
-                      tooltip: 'Prekini generiranje',
-                      icon: const Icon(Icons.stop_rounded, size: 22),
-                    ),
-                  ],
+                  StreamBuilder(
+                    stream: state.audio.playerStateStream,
+                    builder: (context, snap) {
+                      final isAudioPlaying = snap.data?.playing ?? false;
+                      if (!state.isGenerating && !isAudioPlaying) {
+                        return const SizedBox.shrink();
+                      }
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: 8),
+                          IconButton.filled(
+                            onPressed: () async {
+                              HapticFeedback.mediumImpact();
+                              if (state.isGenerating) {
+                                await state.cancelGeneration();
+                              } else {
+                                await state.audio.stop();
+                                await state.audio.seek(Duration.zero);
+                              }
+                            },
+                            style: IconButton.styleFrom(
+                              backgroundColor:
+                                  Colors.redAccent.withValues(alpha: 0.2),
+                              foregroundColor: Colors.redAccent,
+                              padding: const EdgeInsets.all(14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: BorderSide(
+                                    color: Colors.redAccent
+                                        .withValues(alpha: 0.5)),
+                              ),
+                            ),
+                            tooltip: state.isGenerating
+                                ? 'Prekini generiranje'
+                                : 'Zaustavi reprodukciju (Stop)',
+                            icon: const Icon(Icons.stop_rounded, size: 22),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ],
               ),
             ),

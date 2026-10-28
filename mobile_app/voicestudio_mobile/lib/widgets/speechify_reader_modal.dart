@@ -270,17 +270,13 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                   state.audio.resume();
                 }
               },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 100),
-                padding: EdgeInsets.symmetric(
-                  horizontal: isWordCurrent ? 6 : 2,
-                  vertical: isWordCurrent ? 2 : 1,
-                ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                 decoration: BoxDecoration(
                   color: isWordCurrent
                       ? AppTheme.accentCyan
                       : (isWordSpoken
-                          ? AppTheme.accentCyan.withValues(alpha: 0.10)
+                          ? AppTheme.accentCyan.withValues(alpha: 0.12)
                           : Colors.transparent),
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -293,9 +289,7 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                             ? AppTheme.textPrimary
                             : AppTheme.textSecondary),
                     fontSize: 16,
-                    fontWeight: isWordCurrent
-                        ? FontWeight.w800
-                        : (isWordSpoken ? FontWeight.w600 : FontWeight.w500),
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),

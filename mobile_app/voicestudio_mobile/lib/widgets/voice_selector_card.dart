@@ -10,129 +10,133 @@ class BuiltInArchetypePreset {
   final String id;
   final String hrName;
   final String subtitle;
+  final String language;
   final String instruct;
+  final Map<String, String> vdStates;
+  final String sampleScript;
   final IconData icon;
 
   const BuiltInArchetypePreset({
     required this.id,
     required this.hrName,
     required this.subtitle,
+    required this.language,
     required this.instruct,
+    required this.vdStates,
+    required this.sampleScript,
     required this.icon,
   });
 
+  /// 4 izvorna HR/SR arhetipa (generirana s hrvatskim/srpskim referentnim uzorkom bez engleskog naglaska)
+  /// + 2 engleska studijska arhetipa.
   static const List<BuiltInArchetypePreset> presets = [
     BuiltInArchetypePreset(
-      id: 'feat_01_the_documentarian',
-      hrName: 'Dokumentarac',
-      subtitle: 'Duboki narator',
-      instruct: 'male, middle-aged, low pitch, american accent',
+      id: 'hr_filmski_narator',
+      hrName: 'Filmski Narator',
+      subtitle: 'HR/SR • Duboki muški',
+      language: 'Croatian',
+      instruct: 'male, middle-aged, low pitch',
+      vdStates: {
+        'Gender': 'male',
+        'Age': 'middle-aged',
+        'Pitch': 'low pitch',
+        'Style': 'Auto',
+        'EnglishAccent': 'Auto',
+        'ChineseDialect': 'Auto',
+      },
+      sampleScript:
+          'Dobar dan i dobro došli. Danas vam donosimo priču koja je stoljećima čekala da bude ispričana.',
       icon: Icons.movie_filter_rounded,
     ),
     BuiltInArchetypePreset(
-      id: 'feat_00_the_librarian',
-      hrName: 'Knjižničarka',
-      subtitle: 'Smirena naracija',
-      instruct: 'female, middle-aged, low pitch, british accent',
-      icon: Icons.menu_book_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_16_the_anchor',
+      id: 'hr_tv_voditelj',
       hrName: 'TV Voditelj',
-      subtitle: 'Vijesti / Dnevnik',
-      instruct: 'male, middle-aged, moderate pitch, american accent',
+      subtitle: 'HR/SR • Vijesti i tekst',
+      language: 'Croatian',
+      instruct: 'male, middle-aged, moderate pitch',
+      vdStates: {
+        'Gender': 'male',
+        'Age': 'middle-aged',
+        'Pitch': 'moderate pitch',
+        'Style': 'Auto',
+        'EnglishAccent': 'Auto',
+        'ChineseDialect': 'Auto',
+      },
+      sampleScript:
+          'Dobro večer, pratite središnji pregled najvažnijih događaja današnjeg dana.',
       icon: Icons.live_tv_rounded,
     ),
     BuiltInArchetypePreset(
-      id: 'feat_19_the_promo_voice',
-      hrName: 'Filmski Trailer',
-      subtitle: 'Reklama / Najava',
-      instruct: 'male, middle-aged, low pitch',
-      icon: Icons.campaign_rounded,
+      id: 'hr_smirena_naratorica',
+      hrName: 'Naratorica',
+      subtitle: 'HR/SR • Topli ženski',
+      language: 'Croatian',
+      instruct: 'female, middle-aged, low pitch',
+      vdStates: {
+        'Gender': 'female',
+        'Age': 'middle-aged',
+        'Pitch': 'low pitch',
+        'Style': 'Auto',
+        'EnglishAccent': 'Auto',
+        'ChineseDialect': 'Auto',
+      },
+      sampleScript:
+          'U tišini večeri svaka riječ pronalazi svoj miran i jasan put do slušatelja.',
+      icon: Icons.menu_book_rounded,
     ),
     BuiltInArchetypePreset(
-      id: 'feat_03_the_storyteller',
-      hrName: 'Stari Pripovjedač',
-      subtitle: 'Mudri stariji glas',
-      instruct: 'male, elderly, low pitch, british accent',
-      icon: Icons.auto_fix_high_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_02_the_calm_guide',
-      hrName: 'Mirni Šapat',
-      subtitle: 'ASMR / Meditacija',
-      instruct: 'female, middle-aged, low pitch, whisper',
-      icon: Icons.nightlight_round,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_17_the_commentator',
-      hrName: 'Komentator',
-      subtitle: 'Sport / prijenos',
-      instruct: 'male, middle-aged, high pitch, british accent',
-      icon: Icons.emoji_events_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_13_the_podcaster',
-      hrName: 'Podcasterica',
-      subtitle: 'Energičan govor',
-      instruct: 'female, young adult, high pitch, australian accent',
+      id: 'hr_prirodni_zenski',
+      hrName: 'Voditeljica',
+      subtitle: 'HR/SR • Prirodni glas',
+      language: 'Croatian',
+      instruct: 'female, young adult, moderate pitch',
+      vdStates: {
+        'Gender': 'female',
+        'Age': 'young adult',
+        'Pitch': 'moderate pitch',
+        'Style': 'Auto',
+        'EnglishAccent': 'Auto',
+        'ChineseDialect': 'Auto',
+      },
+      sampleScript:
+          'Pozdrav svima i dobro došli u novu epizodu! Drago mi je što ste danas s nama.',
       icon: Icons.podcasts_rounded,
     ),
     BuiltInArchetypePreset(
-      id: 'feat_14_the_hype_host',
-      hrName: 'YouTuber / Hype',
-      subtitle: 'Brz i uzbuđen',
-      instruct: 'male, young adult, very high pitch, american accent',
-      icon: Icons.bolt_rounded,
+      id: 'feat_01_the_documentarian',
+      hrName: 'Documentarian (EN)',
+      subtitle: 'Engleski • US Narator',
+      language: 'English',
+      instruct: 'male, middle-aged, low pitch, american accent',
+      vdStates: {
+        'Gender': 'male',
+        'Age': 'middle-aged',
+        'Pitch': 'low pitch',
+        'Style': 'Auto',
+        'EnglishAccent': 'american accent',
+        'ChineseDialect': 'Auto',
+      },
+      sampleScript:
+          'The valley had been quiet for a hundred years, and tonight something stirred beneath the bridge.',
+      icon: Icons.public_rounded,
     ),
     BuiltInArchetypePreset(
-      id: 'feat_08_captain_crusty',
-      hrName: 'Kapetan Gusar',
-      subtitle: 'Jako dubok lik',
-      instruct: 'male, elderly, very low pitch',
-      icon: Icons.sailing_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_12_the_ogre',
-      hrName: 'Div / Čudovište',
-      subtitle: 'Epski duboki bas',
-      instruct: 'male, middle-aged, very low pitch',
-      icon: Icons.shield_moon_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_11_the_pixie',
-      hrName: 'Vila / Crtić',
-      subtitle: 'Visoki dječji glas',
-      instruct: 'female, child, very high pitch',
-      icon: Icons.auto_awesome_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_09_junior_quacks',
-      hrName: 'Tinejdžer',
-      subtitle: 'Animirani lik',
-      instruct: 'teenager, high pitch',
-      icon: Icons.sentiment_very_satisfied_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_04_the_neighbor',
-      hrName: 'Susjeda',
-      subtitle: 'Prirodan razgovor',
-      instruct: 'female, young adult, moderate pitch, american accent',
-      icon: Icons.chat_bubble_outline_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_22_the_teacher',
-      hrName: 'Profesorica',
-      subtitle: 'Edukacija / Lekcije',
-      instruct: 'female, middle-aged, moderate pitch, american accent',
-      icon: Icons.school_rounded,
-    ),
-    BuiltInArchetypePreset(
-      id: 'feat_23_the_explainer',
-      hrName: 'Edukator',
-      subtitle: 'Jasno objašnjavanje',
-      instruct: 'male, young adult, moderate pitch, british accent',
-      icon: Icons.lightbulb_outline_rounded,
+      id: 'feat_03_the_storyteller',
+      hrName: 'Storyteller (EN)',
+      subtitle: 'Engleski • UK Pripovjedač',
+      language: 'English',
+      instruct: 'male, elderly, low pitch, british accent',
+      vdStates: {
+        'Gender': 'male',
+        'Age': 'elderly',
+        'Pitch': 'low pitch',
+        'Style': 'Auto',
+        'EnglishAccent': 'british accent',
+        'ChineseDialect': 'Auto',
+      },
+      sampleScript:
+          'Long ago, before the maps were drawn, travellers spoke of a hidden kingdom beyond the hills.',
+      icon: Icons.auto_fix_high_rounded,
     ),
   ];
 }
@@ -162,7 +166,6 @@ class VoiceSelectorCard extends StatefulWidget {
 }
 
 class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
-  // 'all' = Cloned voices + Archetypes in the same row; 'cloned' = only cloned; 'archetypes' = only archetypes
   String _filterMode = 'all';
   String? _activatingArchetypeId;
 
@@ -173,11 +176,8 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
     HapticFeedback.selectionClick();
     final state = context.read<AppState>();
 
-    // Check if already materialized in user's profile list
     final existing = widget.profiles
-        .where((p) =>
-            p.name.toLowerCase() == arch.hrName.toLowerCase() ||
-            p.name.toLowerCase().contains(arch.hrName.toLowerCase()))
+        .where((p) => p.name.toLowerCase() == arch.hrName.toLowerCase())
         .firstOrNull;
 
     if (existing != null) {
@@ -190,16 +190,28 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
     setState(() => _activatingArchetypeId = arch.id);
 
     try {
-      final created = await state.useArchetype(
-        arch.id,
-        customName: arch.hrName,
-      );
+      final VoiceProfile created;
+      if (arch.id.startsWith('hr_')) {
+        // Materialize natively in Croatian/Serbian so reference WAV has native HR/SR phonetics!
+        created = await state.createDesignedProfile(
+          name: arch.hrName,
+          vdStates: arch.vdStates,
+          instruct: arch.instruct,
+          language: arch.language,
+          sampleScript: arch.sampleScript,
+        );
+      } else {
+        created = await state.useArchetype(
+          arch.id,
+          customName: arch.hrName,
+        );
+      }
       await state.setInstruct(arch.instruct);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                '🎭 Arhetip "${created.name}" je aktiviran i spreman za čitanje!'),
+                '🎭 Arhetip "${created.name}" (${arch.language == "Croatian" ? "HR/SR" : "EN"}) je aktiviran!'),
             backgroundColor: AppTheme.accentGreen,
             duration: const Duration(seconds: 2),
           ),
@@ -228,7 +240,6 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Top Header with title + Manage & Clone buttons
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
@@ -317,14 +328,14 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
         ),
         const SizedBox(height: 8),
 
-        // Quick Category Filter Pills (Svi | Moji Klonovi | 🎭 Arhetipovi)
+        // Quick Category Filter Pills (Svi | Klonirani | 🎭 Arhetipovi (6))
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               _buildFilterChip(
                 mode: 'all',
-                label: 'Svi u traci (${profiles.length} + ${archetypes.length})',
+                label: 'Svi (${profiles.length} + ${archetypes.length})',
                 icon: Icons.layers_rounded,
                 activeColor: AppTheme.accentCyan,
               ),
@@ -347,7 +358,6 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
         ),
         const SizedBox(height: 10),
 
-        // Horizontal Carousel containing Cloned Voices AND/OR Built-in Archetypes
         SizedBox(
           height: 112,
           child: widget.isLoading && profiles.isEmpty && _filterMode == 'cloned'
@@ -450,7 +460,6 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
       }
     }
 
-    // "+ Add Voice" card at the end
     items.add(
       GestureDetector(
         onTap: widget.onAddVoice,
@@ -594,7 +603,7 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
             ),
             const SizedBox(height: 2),
             Text(
-              profile.kind == 'design' ? 'Dizajniran' : 'Kloniran',
+              profile.kind == 'design' ? 'Arhetip / Dizajn' : 'Kloniran',
               maxLines: 1,
               style: const TextStyle(
                 color: AppTheme.textMuted,
@@ -613,19 +622,18 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
     List<VoiceProfile> profiles,
   ) {
     final matchingProfile = profiles
-        .where((p) =>
-            p.name.toLowerCase() == arch.hrName.toLowerCase() ||
-            p.name.toLowerCase().contains(arch.hrName.toLowerCase()))
+        .where((p) => p.name.toLowerCase() == arch.hrName.toLowerCase())
         .firstOrNull;
     final isSelected = matchingProfile != null &&
         widget.selectedProfile?.id == matchingProfile.id;
     final isActivating = _activatingArchetypeId == arch.id;
+    final isHr = arch.language == 'Croatian';
 
     return GestureDetector(
       onTap: () => _onTapArchetype(context, arch),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 108,
+        width: 112,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
           color: isSelected
@@ -657,16 +665,17 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.18),
+                    color: (isHr ? AppTheme.accentCyan : Colors.amber)
+                        .withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: const Text(
-                    'ARHETIP',
+                  child: Text(
+                    isHr ? 'HR/SR ARHETIP' : 'EN ARHETIP',
                     style: TextStyle(
-                      color: Colors.amber,
-                      fontSize: 8,
+                      color: isHr ? AppTheme.accentCyan : Colors.amber,
+                      fontSize: 7.5,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.4,
+                      letterSpacing: 0.3,
                     ),
                   ),
                 ),
