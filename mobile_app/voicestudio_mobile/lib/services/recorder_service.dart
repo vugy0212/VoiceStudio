@@ -18,18 +18,18 @@ class RecorderService {
   Future<void> startRecording() async {
     final hasPerm = await hasPermission();
     if (!hasPerm) {
-      throw Exception('Microphone permission not granted');
+      throw Exception('Dozvola za mikrofon nije odobrena');
     }
 
     final tempDir = await getTemporaryDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    _currentRecordingPath = '${tempDir.path}/voice_sample_$timestamp.m4a';
+    _currentRecordingPath = '${tempDir.path}/voice_sample_$timestamp.wav';
 
     await _audioRecorder.start(
       const RecordConfig(
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        sampleRate: 44100,
+        encoder: AudioEncoder.wav,
+        sampleRate: 24000,
+        numChannels: 1,
       ),
       path: _currentRecordingPath!,
     );

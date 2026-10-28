@@ -19,18 +19,20 @@ class AppConstants {
   static const String prefInstruct = 'vs_instruct';
   static const String prefSavedAudios = 'vs_saved_audios';
   static const String prefStreamingEnabled = 'vs_streaming_enabled';
+  static const String prefCachedProfiles = 'vs_cached_profiles';
+  static const String prefDraftText = 'vs_draft_text';
 
   static const List<double> availableSpeeds = [0.8, 1.0, 1.25, 1.5, 2.0];
   static const List<String> availableLanguages = ['Auto', 'Croatian', 'English', 'Serbian', 'German', 'Italian', 'Spanish'];
 
   static const List<Map<String, String>> emotionPresets = [
-    {'label': 'Normal', 'prompt': ''},
-    {'label': 'Whisper', 'prompt': 'whisper'},
-    {'label': 'Deep Voice', 'prompt': 'low pitch'},
-    {'label': 'High Pitch', 'prompt': 'high pitch'},
-    {'label': 'Young Adult', 'prompt': 'young adult'},
-    {'label': 'Elderly', 'prompt': 'elderly'},
-    {'label': 'Moderate', 'prompt': 'moderate pitch'},
-    {'label': 'Whisper & Low', 'prompt': 'whisper, low pitch'},
+    {'label': 'Normalno', 'prompt': ''},
+    {'label': 'Šapat', 'prompt': 'whisper'},
+    {'label': 'Duboki glas', 'prompt': 'low pitch'},
+    {'label': 'Visoki glas', 'prompt': 'high pitch'},
+    {'label': 'Mlađi glas', 'prompt': 'young adult'},
+    {'label': 'Stariji glas', 'prompt': 'elderly'},
+    {'label': 'Umjereno', 'prompt': 'moderate pitch'},
+    {'label': 'Duboki šapat', 'prompt': 'whisper, low pitch'},
   ];
 }

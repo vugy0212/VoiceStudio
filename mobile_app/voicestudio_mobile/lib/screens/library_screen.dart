@@ -61,14 +61,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Saved Library (Offline)'),
+        title: const Text('Spremljena biblioteka (Offline)'),
         actions: [
           IconButton(
             icon: Icon(
               _onlyFavorites ? Icons.star_rounded : Icons.star_outline_rounded,
               color: _onlyFavorites ? Colors.amber : AppTheme.textSecondary,
             ),
-            tooltip: _onlyFavorites ? 'Show All' : 'Show Favorites Only',
+            tooltip: _onlyFavorites ? 'Prikaži sve' : 'Prikaži samo favorite',
             onPressed: () => setState(() => _onlyFavorites = !_onlyFavorites),
           ),
           const SizedBox(width: 8),
@@ -82,7 +82,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: TextField(
               style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
               decoration: InputDecoration(
-                hintText: 'Search offline library...',
+                hintText: 'Pretraži spremljene zapise...',
                 prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppTheme.textMuted),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 suffixIcon: _searchQuery.isNotEmpty
@@ -103,7 +103,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _onlyFavorites ? 'FAVORITES (${filtered.length})' : 'SAVED TAKES (${filtered.length})',
+                  _onlyFavorites ? 'FAVORITI (${filtered.length})' : 'SPREMLJENI ZAPISI (${filtered.length})',
                   style: const TextStyle(
                     color: AppTheme.textMuted,
                     fontSize: 11,
@@ -112,7 +112,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ),
                 Text(
-                  '${state.savedAudios.length} total stored',
+                  'Ukupno: ${state.savedAudios.length}',
                   style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
                 ),
               ],
@@ -137,10 +137,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           const SizedBox(height: 14),
                           Text(
                             _onlyFavorites
-                                ? 'No favorite takes yet'
+                                ? 'Još nema označenih favorita'
                                 : (state.savedAudios.isEmpty
-                                    ? 'No saved audio in library\nTap the bookmark icon on the audio player to save takes offline!'
-                                    : 'No matches found for "$_searchQuery"'),
+                                    ? 'Biblioteka je prazna\nDodirnite ikonu oznake na playeru kako biste spremili zapise za slušanje bez interneta!'
+                                    : 'Nema rezultata za "$_searchQuery"'),
                             textAlign: TextAlign.center,
                             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13.5),
                           ),
@@ -173,7 +173,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Audio file no longer exists on device storage.'),
+                                    content: Text('Audio datoteka više ne postoji u memoriji uređaja.'),
                                     backgroundColor: AppTheme.primary,
                                   ),
                                 );
@@ -186,17 +186,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           final confirm = await showDialog<bool>(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              title: const Text('Delete Audio'),
-                              content: Text('Delete "${item.title}" from local library?'),
+                              title: const Text('Obriši audio zapis'),
+                              content: Text('Obrisati "${item.title}" iz lokalne biblioteke?'),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text('Cancel'),
+                                  child: const Text('Odustani'),
                                 ),
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, true),
                                   style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                                  child: const Text('Delete'),
+                                  child: const Text('Obriši'),
                                 ),
                               ],
                             ),
@@ -216,7 +216,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                             await SharePlus.instance.share(
                               ShareParams(
                                 files: [XFile(file.path)],
-                                text: '${item.title} (Voice: ${item.profileName})',
+                                text: '${item.title} (Glas: ${item.profileName})',
                               ),
                             );
                           }
@@ -259,174 +259,171 @@ class _LibraryItemCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isPlaying ? AppTheme.surfaceHighlight : AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isPlaying ? AppTheme.primaryNeon : AppTheme.border,
-          width: isPlaying ? 1.5 : 1,
+        decoration: BoxDecoration(
+          color: isPlaying ? AppTheme.surfaceHighlight : AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isPlaying ? AppTheme.primaryNeon : AppTheme.border,
+            width: isPlaying ? 1.5 : 1,
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // Play/Pause button
-              GestureDetector(
-                onTap: onPlayToggle,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isPlaying
-                          ? [AppTheme.primaryNeon, AppTheme.primary]
-                          : fileExists
-                              ? [AppTheme.surfaceElevated, AppTheme.surfaceHighlight]
-                              : [AppTheme.surface, AppTheme.surfaceElevated],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: onPlayToggle,
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isPlaying
+                            ? [AppTheme.primaryNeon, AppTheme.primary]
+                            : fileExists
+                                ? [AppTheme.surfaceElevated, AppTheme.surfaceHighlight]
+                                : [AppTheme.surface, AppTheme.surfaceElevated],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
                     ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    isPlaying
-                        ? Icons.pause_rounded
-                        : (fileExists ? Icons.play_arrow_rounded : Icons.broken_image_rounded),
-                    color: isPlaying
-                        ? Colors.white
-                        : (fileExists ? AppTheme.primary : AppTheme.textMuted),
-                    size: 22,
+                    child: Icon(
+                      isPlaying
+                          ? Icons.pause_rounded
+                          : (fileExists ? Icons.play_arrow_rounded : Icons.broken_image_rounded),
+                      color: isPlaying
+                          ? Colors.white
+                          : (fileExists ? AppTheme.primary : AppTheme.textMuted),
+                      size: 22,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
 
-              // Title and Profile badge
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppTheme.accentCyan.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              item.profileName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.accentCyan,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accentCyan.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                item.profileName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppTheme.accentCyan,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        if (!fileExists) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
+                          if (!fileExists) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.warning_amber_rounded, size: 11, color: Colors.redAccent),
+                                  SizedBox(width: 2),
+                                  Text(
+                                    'Nedostaje',
+                                    style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
                             ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.warning_amber_rounded, size: 11, color: Colors.redAccent),
-                                SizedBox(width: 2),
-                                Text(
-                                  'Missing',
-                                  style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.w600),
-                                ),
-                              ],
+                          ],
+                          if (item.duration > 0) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '• ${item.duration.toStringAsFixed(1)}s',
+                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
                             ),
-                          ),
+                          ],
                         ],
-                        if (item.duration > 0) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            '• ${item.duration.toStringAsFixed(1)}s',
-                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                          ),
-                        ],
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                IconButton(
+                  icon: Icon(
+                    item.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                    color: item.isFavorite ? Colors.amber : AppTheme.textMuted,
+                    size: 20,
+                  ),
+                  tooltip: 'Favorit',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onToggleFavorite,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share_rounded, size: 18, color: AppTheme.textMuted),
+                  tooltip: 'Podijeli audio',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onShare,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.textMuted),
+                  tooltip: 'Obriši',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onDelete,
+                ),
+              ],
+            ),
+
+            if (item.text.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceElevated.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11.5),
+                      ),
                     ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.open_in_full_rounded, size: 13, color: AppTheme.accentCyan),
                   ],
                 ),
               ),
-
-              // Actions
-              IconButton(
-                icon: Icon(
-                  item.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
-                  color: item.isFavorite ? Colors.amber : AppTheme.textMuted,
-                  size: 20,
-                ),
-                tooltip: 'Favorite',
-                visualDensity: VisualDensity.compact,
-                onPressed: onToggleFavorite,
-              ),
-              IconButton(
-                icon: const Icon(Icons.share_rounded, size: 18, color: AppTheme.textMuted),
-                tooltip: 'Share audio',
-                visualDensity: VisualDensity.compact,
-                onPressed: onShare,
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.textMuted),
-                tooltip: 'Delete',
-                visualDensity: VisualDensity.compact,
-                onPressed: onDelete,
-              ),
             ],
-          ),
-
-          if (item.text.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceElevated.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.text,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11.5),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.open_in_full_rounded, size: 13, color: AppTheme.accentCyan),
-                ],
-              ),
-            ),
           ],
-        ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

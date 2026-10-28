@@ -10,6 +10,8 @@ import '../widgets/voice_styling_card.dart';
 import '../widgets/neon_audio_player.dart';
 import '../widgets/speechify_reader_modal.dart';
 import 'voice_clone_screen.dart';
+import 'speech_to_speech_screen.dart';
+import 'dialogue_studio_screen.dart';
 import 'history_screen.dart';
 import 'library_screen.dart';
 import 'settings_screen.dart';
@@ -22,10 +24,24 @@ class HomeTtsScreen extends StatefulWidget {
 }
 
 class _HomeTtsScreenState extends State<HomeTtsScreen> {
-  final TextEditingController _textController = TextEditingController();
+  late final TextEditingController _textController;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialDraft = context.read<AppState>().draftText;
+    _textController = TextEditingController(text: initialDraft);
+    _textController.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (!mounted) return;
+    context.read<AppState>().setDraftText(_textController.text);
+  }
 
   @override
   void dispose() {
+    _textController.removeListener(_onTextChanged);
     _textController.dispose();
     super.dispose();
   }
@@ -47,9 +63,139 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
     state.generateSpeech(text);
   }
 
+  Future<void> _toggleGatewayPower(AppState state) async {
+    if (!state.isConnected) return;
+    HapticFeedback.mediumImpact();
+    if (state.isBackendSleeping) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Budim VoiceStudio GPU engine na računalu...'),
+          backgroundColor: AppTheme.accentCyan,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      await state.wakeEngine();
+    } else {
+      final ok = await state.sleepEngine();
+      if (mounted && ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('VoiceStudio prebačen u Standby (0% GPU VRAM).'),
+            backgroundColor: AppTheme.accentCyan,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildStudioToolsRow(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          _buildToolChip(
+            icon: Icons.record_voice_over_rounded,
+            label: 'Speech-to-Speech',
+            color: AppTheme.accentCyan,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SpeechToSpeechScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+          _buildToolChip(
+            icon: Icons.forum_rounded,
+            label: 'Višeglasni dijalog',
+            color: AppTheme.primaryNeon,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DialogueStudioScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+          _buildToolChip(
+            icon: Icons.auto_fix_high_rounded,
+            label: 'Dizajn glasa',
+            color: AppTheme.accentGreen,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const VoiceCloneScreen(initialTabIndex: 1)),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+          _buildToolChip(
+            icon: Icons.theater_comedy_rounded,
+            label: 'Arhetipovi',
+            color: Colors.amberAccent,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const VoiceCloneScreen(initialTabIndex: 2)),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: AppTheme.surfaceElevated,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+
+    // Sync if draftText was updated externally (e.g. from HistoryScreen "Koristi tekst")
+    if (state.draftText != _textController.text) {
+      _textController.value = TextEditingValue(
+        text: state.draftText,
+        selection: TextSelection.collapsed(offset: state.draftText.length),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -91,7 +237,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
             children: [
               IconButton(
                 icon: const Icon(Icons.library_music_rounded, size: 21, color: AppTheme.textSecondary),
-                tooltip: 'Saved Library',
+                tooltip: 'Spremljena biblioteka',
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const LibraryScreen()),
@@ -121,7 +267,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
           // History Button
           IconButton(
             icon: const Icon(Icons.history_rounded, size: 21, color: AppTheme.textSecondary),
-            tooltip: 'Generation History',
+            tooltip: 'Povijest generiranja',
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const HistoryScreen()),
@@ -131,7 +277,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
           // Settings Button
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 21, color: AppTheme.textSecondary),
-            tooltip: 'Settings',
+            tooltip: 'Postavke mreže',
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -142,13 +288,13 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => state.testConnectionAndRefresh(),
+        onRefresh: () => state.testConnectionAndRefresh(forceWake: false),
         color: AppTheme.primary,
         backgroundColor: AppTheme.surfaceElevated,
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: [
-            // Cloudflare Connection Badge (Dedicated placement matching mockup_ui.jpg)
+            // Connection & Standby Badge (Tap -> Settings, Long Press -> Sleep/Wake GPU)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Align(
@@ -156,11 +302,14 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                 child: ConnectionBadge(
                   isConnected: state.isConnected,
                   isChecking: state.isCheckingConnection,
+                  isUsingLocal: state.isUsingLocalUrl,
+                  backendStatus: state.backendStatus,
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const SettingsScreen()),
                     );
                   },
+                  onLongPress: () => _toggleGatewayPower(state),
                 ),
               ),
             ),
@@ -174,11 +323,15 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
               onSelect: (profile) => state.selectProfile(profile),
               onAddVoice: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const VoiceCloneScreen()),
+                  MaterialPageRoute(builder: (_) => const VoiceCloneScreen(initialTabIndex: 0)),
                 );
               },
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
+
+            // 1b. Studio Alati Quick Access Bar
+            _buildStudioToolsRow(context),
+            const SizedBox(height: 16),
 
             // 2. Text Input Card
             Padding(
@@ -189,6 +342,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                 onLanguageChanged: (lang) => state.setLanguage(lang),
                 onClear: () {
                   _textController.clear();
+                  state.setDraftText('');
                   setState(() {});
                 },
               ),
@@ -208,7 +362,6 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
               ),
             ),
             const SizedBox(height: 14),
-
 
             // Error Banner if generation failed
             if (state.errorMessage != null)
@@ -243,26 +396,28 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
               ),
             if (state.errorMessage != null) const SizedBox(height: 14),
 
-            // 4. Action Row (Speechify Reader button + Synthesize CTA)
+            // 4. Action Row (Speechify Reader button + Synthesize / Cancel CTA)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
                   // Speechify Reader Mode Button
                   OutlinedButton(
-                    onPressed: () {
-                      final text = _textController.text.trim();
-                      if (text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Enter text or an article to read in Speechify mode.'),
-                            backgroundColor: AppTheme.primary,
-                          ),
-                        );
-                        return;
-                      }
-                      SpeechifyReaderModal.show(context, text);
-                    },
+                    onPressed: state.isGenerating
+                        ? null
+                        : () {
+                            final text = _textController.text.trim();
+                            if (text.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Unesite tekst ili članak za čitanje po odlomcima.'),
+                                  backgroundColor: AppTheme.primary,
+                                ),
+                              );
+                              return;
+                            }
+                            SpeechifyReaderModal.show(context, text);
+                          },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.accentCyan,
                       side: const BorderSide(color: AppTheme.border),
@@ -274,7 +429,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                       children: [
                         Icon(Icons.auto_stories_rounded, size: 20),
                         SizedBox(width: 6),
-                        Text('Reader', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                        Text('Čitač', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                       ],
                     ),
                   ),
@@ -312,43 +467,71 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                         child: state.isGenerating
-                          ? Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  state.streamingChunkCount > 0
-                                      ? '⚡ Strujanje (${state.streamingChunkCount}. dio, ${state.generationElapsed.toStringAsFixed(1)}s)...'
-                                      : 'Generiranje (${state.generationElapsed.toStringAsFixed(1)}s)...',
-                                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-                                ),
-                              ],
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.play_circle_filled_rounded, size: 22),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    state.selectedProfile != null
-                                        ? 'Sintetiziraj glas "${state.selectedProfile!.name}"'
-                                        : 'Sintetiziraj Glas',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                            ? Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
                                   ),
-                                ),
-                              ],
-                            ),
+                                  const SizedBox(width: 10),
+                                  Flexible(
+                                    child: Text(
+                                      state.streamingChunkCount > 0
+                                          ? '⚡ Strujanje (${state.streamingChunkCount}. dio, ${state.generationElapsed.toStringAsFixed(1)}s)'
+                                          : (state.backendStatus == 'STARTING'
+                                              ? 'Buđenje + Sinteza (${state.generationElapsed.toStringAsFixed(1)}s)'
+                                              : 'Generiranje (${state.generationElapsed.toStringAsFixed(1)}s)'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.play_circle_filled_rounded, size: 22),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      state.selectedProfile != null
+                                          ? 'Sintetiziraj "${state.selectedProfile!.name}"'
+                                          : 'Sintetiziraj glas',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
                       ),
                     ),
                   ),
+
+                  // Cancel button during active synthesis
+                  if (state.isGenerating) ...[
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        state.cancelGeneration();
+                      },
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.redAccent.withValues(alpha: 0.2),
+                        foregroundColor: Colors.redAccent,
+                        padding: const EdgeInsets.all(14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5)),
+                        ),
+                      ),
+                      tooltip: 'Prekini generiranje',
+                      icon: const Icon(Icons.stop_rounded, size: 22),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -362,27 +545,28 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                   audioService: state.audio,
                   currentAudioFile: state.lastGeneration!.audioFile,
                   title: state.selectedProfile?.name != null
-                      ? 'Voice: ${state.selectedProfile!.name}'
-                      : 'Generated Speech',
+                      ? 'Glas: ${state.selectedProfile!.name}'
+                      : 'Generirani govor',
                   currentSpeed: state.speed,
                   onSpeedChanged: (speed) => state.setSpeed(speed),
                   isSaved: state.savedAudios.any(
-                    (a) => a.filePath == state.lastGeneration!.audioFile.path,
+                    (a) => a.filePath == state.lastGeneration!.audioFile.path ||
+                        (a.text == _textController.text && a.profileName == (state.selectedProfile?.name ?? 'Zadani')),
                   ),
                   onSaveToLibrary: () async {
                     final item = await state.saveToLibrary(
                       file: state.lastGeneration!.audioFile,
                       text: _textController.text,
-                      profileName: state.selectedProfile?.name ?? 'Default',
+                      profileName: state.selectedProfile?.name ?? 'Zadani',
                       duration: state.lastGeneration?.duration,
                     );
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Saved "${item.title}" to offline library!'),
+                          content: Text('Spremljeno "${item.title}" u offline biblioteku!'),
                           backgroundColor: AppTheme.accentGreen,
                           action: SnackBarAction(
-                            label: 'VIEW',
+                            label: 'OTVORI',
                             textColor: Colors.white,
                             onPressed: () {
                               Navigator.of(context).push(

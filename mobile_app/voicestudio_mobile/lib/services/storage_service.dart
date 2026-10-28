@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import '../models/saved_audio.dart';
+import '../models/voice_profile.dart';
 
 class StorageService {
   final SharedPreferences _prefs;
@@ -84,6 +85,27 @@ class StorageService {
     }
   }
 
+  List<VoiceProfile> getCachedProfiles() {
+    final raw = _prefs.getString(AppConstants.prefCachedProfiles);
+    if (raw == null || raw.isEmpty) return [];
+    return VoiceProfile.decodeList(raw);
+  }
+
+  Future<void> setCachedProfiles(List<VoiceProfile> profiles) async {
+    await _prefs.setString(
+      AppConstants.prefCachedProfiles,
+      VoiceProfile.encodeList(profiles),
+    );
+  }
+
+  String getDraftText() {
+    return _prefs.getString(AppConstants.prefDraftText) ?? '';
+  }
+
+  Future<void> setDraftText(String text) async {
+    await _prefs.setString(AppConstants.prefDraftText, text);
+  }
+
   double getSpeed() {
     return _prefs.getDouble(AppConstants.prefSpeed) ?? 1.0;
   }
@@ -132,7 +154,6 @@ class StorageService {
 
   Future<void> saveAudio(SavedAudio audio) async {
     final list = getSavedAudios();
-    // Remove if existing with same id, then prepend
     list.removeWhere((item) => item.id == audio.id);
     list.insert(0, audio);
     await _prefs.setString(AppConstants.prefSavedAudios, SavedAudio.encodeList(list));

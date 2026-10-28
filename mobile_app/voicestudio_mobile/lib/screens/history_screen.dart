@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:share_plus/share_plus.dart';
 import '../config/theme.dart';
 import '../state/app_state.dart';
 import '../models/generation_history.dart';
@@ -15,7 +17,20 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   String? _currentlyPlayingId;
+  String? _downloadingId;
   StreamSubscription<PlayerState>? _playerSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = context.read<AppState>();
+      if (state.history.isEmpty && !state.isBackendSleeping) {
+        state.refreshHistory();
+      }
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -57,13 +72,78 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  Future<void> _saveToOfflineLibrary(GenerationHistory item) async {
+    final state = context.read<AppState>();
+    setState(() => _downloadingId = item.id);
+    try {
+      final saved = await state.saveHistoryItemToLibrary(item);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Spremljeno u offline biblioteku: "${saved.title}"'),
+            backgroundColor: AppTheme.accentGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Greška pri preuzimanju: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingId = null);
+    }
+  }
+
+  Future<void> _shareHistoryItem(GenerationHistory item) async {
+    final state = context.read<AppState>();
+    setState(() => _downloadingId = item.id);
+    try {
+      final file = await state.api.downloadAudioFile(item.filename);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: item.text,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Greška pri dijeljenju: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingId = null);
+    }
+  }
+
+  void _useTextInEditor(GenerationHistory item) {
+    HapticFeedback.lightImpact();
+    context.read<AppState>().setDraftText(item.text, notify: true);
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Tekst učitan u glavni editor.'),
+        backgroundColor: AppTheme.accentCyan,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Generation History'),
+        title: const Text('Povijest sa poslužitelja'),
         actions: [
           IconButton(
             icon: state.isLoadingHistory
@@ -73,35 +153,44 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentCyan),
                   )
                 : const Icon(Icons.refresh_rounded, color: AppTheme.accentCyan),
+            tooltip: 'Osvježi povijest',
             onPressed: state.isLoadingHistory ? null : () => state.refreshHistory(),
           ),
         ],
       ),
       body: state.history.isEmpty
           ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceElevated,
-                      shape: BoxShape.circle,
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.surfaceElevated,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.history_rounded, size: 32, color: AppTheme.textMuted),
                     ),
-                    child: const Icon(Icons.history_rounded, size: 32, color: AppTheme.textMuted),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No generations yet',
-                    style: TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Generated speech from your PC will appear here.',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    Text(
+                      state.isBackendSleeping
+                          ? 'Engine je u Standby režimu (0% GPU)'
+                          : 'Još nema generiranih zapisa',
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      state.isBackendSleeping
+                          ? 'Dodirnite gumb za osvježavanje na vrhu ako želite probuditi poslužitelj i dohvatiti povijest.'
+                          : 'Govor generiran na računalu ili mobitelu pojavit će se ovdje.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                    ),
+                  ],
+                ),
               ),
             )
           : ListView.separated(
@@ -111,6 +200,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               itemBuilder: (context, index) {
                 final item = state.history[index];
                 final isPlaying = _currentlyPlayingId == item.id;
+                final isDownloading = _downloadingId == item.id;
 
                 return Container(
                   padding: const EdgeInsets.all(14),
@@ -137,7 +227,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
-                                  item.profileName ?? 'Clone',
+                                  item.profileName ?? 'Klonirani glas',
                                   style: const TextStyle(
                                     color: AppTheme.primary,
                                     fontSize: 11,
@@ -154,14 +244,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               ],
                             ],
                           ),
-                          IconButton(
-                            icon: Icon(
-                              isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
-                              color: AppTheme.primaryNeon,
-                              size: 32,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => _playHistoryItem(item),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_note_rounded, color: AppTheme.accentCyan, size: 22),
+                                tooltip: 'Učitaj tekst u editor',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _useTextInEditor(item),
+                              ),
+                              IconButton(
+                                icon: isDownloading
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentGreen),
+                                      )
+                                    : const Icon(Icons.download_for_offline_outlined, color: AppTheme.accentGreen, size: 21),
+                                tooltip: 'Spremi u offline biblioteku',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: isDownloading ? null : () => _saveToOfflineLibrary(item),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.share_rounded, color: AppTheme.textSecondary, size: 19),
+                                tooltip: 'Podijeli audio',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: isDownloading ? null : () => _shareHistoryItem(item),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                                  color: AppTheme.primaryNeon,
+                                  size: 32,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _playHistoryItem(item),
+                              ),
+                            ],
                           ),
                         ],
                       ),

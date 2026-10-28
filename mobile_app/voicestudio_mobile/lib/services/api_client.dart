@@ -25,6 +25,72 @@ class GenerateResult {
   });
 }
 
+class ConvertResult {
+  final File audioFile;
+  final String recognizedText;
+  final double duration;
+  final double? genTime;
+  final String id;
+
+  ConvertResult({
+    required this.audioFile,
+    required this.recognizedText,
+    required this.duration,
+    this.genTime,
+    required this.id,
+  });
+}
+
+class ArchetypeItem {
+  final String id;
+  final String name;
+  final String gender;
+  final String age;
+  final String accent;
+  final String useCase;
+  final String instruct;
+  final String language;
+  final bool featured;
+
+  const ArchetypeItem({
+    required this.id,
+    required this.name,
+    required this.gender,
+    required this.age,
+    required this.accent,
+    required this.useCase,
+    required this.instruct,
+    required this.language,
+    this.featured = false,
+  });
+
+  factory ArchetypeItem.fromJson(Map<String, dynamic> json) {
+    return ArchetypeItem(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Arhetip',
+      gender: json['gender']?.toString() ?? '',
+      age: json['age']?.toString() ?? '',
+      accent: json['accent']?.toString() ?? '',
+      useCase: json['use_case']?.toString() ?? '',
+      instruct: json['instruct']?.toString() ?? '',
+      language: json['language']?.toString() ?? 'Auto',
+      featured: json['featured'] == true,
+    );
+  }
+}
+
+class GatewayInfo {
+  final bool reachable;
+  final String backendStatus; // 'RUNNING', 'SLEEPING', 'STARTING', 'DIRECT', 'OFFLINE'
+  final int idleSecondsRemaining;
+
+  const GatewayInfo({
+    required this.reachable,
+    required this.backendStatus,
+    this.idleSecondsRemaining = 0,
+  });
+}
+
 class ApiClient {
   final StorageService _storage;
   late final Dio _dio;
@@ -36,7 +102,7 @@ class ApiClient {
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 120),
         headers: {
-          'User-Agent': 'VoiceStudioMobile/1.0 (Android; Mobile)',
+          'User-Agent': 'VoiceStudioMobile/1.1 (Android; Mobile)',
           'Accept': 'application/json, */*',
         },
       ),
@@ -45,7 +111,6 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          // Inject Cloudflare Access Service Token headers
           final cfId = _storage.getCfClientId();
           final cfSecret = _storage.getCfClientSecret();
 
@@ -80,16 +145,70 @@ class ApiClient {
     if (_activeBaseUrl != null) return _activeBaseUrl!;
     if (connectionMode == 'local') return localBaseUrl;
     if (connectionMode == 'remote') return remoteBaseUrl;
-    // Default fallback in auto mode: local first
     return localBaseUrl;
   }
 
   String get activeBaseUrl => baseUrl;
 
-  bool get isUsingLocalUrl => baseUrl == localBaseUrl;
+  bool get isUsingLocalUrl => baseUrl == localBaseUrl || baseUrl == 'http://127.0.0.1:3900';
 
   void resetActiveBaseUrl() {
     _activeBaseUrl = null;
+  }
+
+  /// Non-waking lightweight probe using /gateway/status first, fallback to /system/info or /profiles
+  Future<GatewayInfo> probeUrl(String targetBaseUrl, {Duration timeout = const Duration(milliseconds: 1500)}) async {
+    try {
+      final res = await _dio.get(
+        '$targetBaseUrl/gateway/status',
+        options: Options(
+          sendTimeout: timeout,
+          receiveTimeout: timeout,
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+
+      if (_isCloudflareHtml(res)) {
+        throw Exception('Cloudflare Access login potreban (302). Unesite CF Service Token u Postavkama.');
+      }
+
+      if (res.statusCode == 200 && res.data is Map) {
+        final map = res.data as Map;
+        final status = map['status']?.toString() ?? 'RUNNING';
+        final idleRem = (map['idle_seconds_remaining'] as num?)?.toInt() ?? 0;
+        return GatewayInfo(
+          reachable: true,
+          backendStatus: status,
+          idleSecondsRemaining: idleRem,
+        );
+      }
+
+      // If /gateway/status returned 404, server may be running directly without gateway
+      if (res.statusCode == 404) {
+        final resDirect = await _dio.get(
+          '$targetBaseUrl/profiles',
+          options: Options(
+            sendTimeout: timeout,
+            receiveTimeout: timeout,
+            validateStatus: (status) => status != null && status < 500,
+          ),
+        );
+        if (resDirect.statusCode == 200 && resDirect.data is List && !_isCloudflareHtml(resDirect)) {
+          return const GatewayInfo(reachable: true, backendStatus: 'DIRECT');
+        }
+      }
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 302) {
+        throw Exception('Cloudflare odbio zahtjev (302 PIN redirect). Dodajte CF Service Token.');
+      } else if (status == 502) {
+        throw Exception('Cloudflare tunel radi, ali VoiceStudio servis nije pokrenut na PC-u (502).');
+      }
+    } catch (e) {
+      if (e.toString().contains('Cloudflare')) rethrow;
+    }
+
+    return const GatewayInfo(reachable: false, backendStatus: 'OFFLINE');
   }
 
   Future<String> resolveActiveBaseUrl() async {
@@ -103,17 +222,10 @@ class ApiClient {
       return _activeBaseUrl!;
     }
 
-    // Auto mode: test configured local URL first with short timeout (1500ms)
+    // Auto mode: probe configured local URL without waking sleeping backend
     try {
-      final res = await _dio.get(
-        '$localBaseUrl/profiles',
-        options: Options(
-          sendTimeout: const Duration(milliseconds: 1500),
-          receiveTimeout: const Duration(milliseconds: 1500),
-          validateStatus: (status) => status != null && status < 500,
-        ),
-      );
-      if (res.statusCode == 200 && res.data is List && !_isCloudflareHtml(res)) {
+      final info = await probeUrl(localBaseUrl, timeout: const Duration(milliseconds: 1200));
+      if (info.reachable) {
         _activeBaseUrl = localBaseUrl;
         return _activeBaseUrl!;
       }
@@ -122,15 +234,8 @@ class ApiClient {
     // If localBaseUrl wasn't 127.0.0.1, also check USB reverse (127.0.0.1:3900)
     if (!localBaseUrl.contains('127.0.0.1')) {
       try {
-        final resUsb = await _dio.get(
-          'http://127.0.0.1:3900/profiles',
-          options: Options(
-            sendTimeout: const Duration(milliseconds: 1200),
-            receiveTimeout: const Duration(milliseconds: 1200),
-            validateStatus: (status) => status != null && status < 500,
-          ),
-        );
-        if (resUsb.statusCode == 200 && resUsb.data is List && !_isCloudflareHtml(resUsb)) {
+        final infoUsb = await probeUrl('http://127.0.0.1:3900', timeout: const Duration(milliseconds: 1000));
+        if (infoUsb.reachable) {
           _activeBaseUrl = 'http://127.0.0.1:3900';
           return _activeBaseUrl!;
         }
@@ -142,7 +247,8 @@ class ApiClient {
   }
 
   String getAudioFileUrl(String filename) {
-    return '$baseUrl/audio/$filename';
+    final cleanName = filename.split('/').last.split('\\').last;
+    return '$baseUrl/audio/$cleanName';
   }
 
   String getProfileAudioUrl(String profileId) {
@@ -166,91 +272,92 @@ class ApiClient {
     return false;
   }
 
-  /// Check server connectivity with auto URL fallback
+  /// Check server connectivity & gateway standby state without unnecessarily waking GPU
+  Future<GatewayInfo> checkGatewayConnection() async {
+    await resolveActiveBaseUrl();
+    final timeout = isUsingLocalUrl
+        ? const Duration(milliseconds: 2500)
+        : const Duration(milliseconds: 6000);
+    return await probeUrl(baseUrl, timeout: timeout);
+  }
+
   Future<bool> checkConnection() async {
+    final info = await checkGatewayConnection();
+    return info.reachable;
+  }
+
+  Future<bool> wakeGateway() async {
     try {
-      await resolveActiveBaseUrl();
-      final resProfiles = await _dio.get(
-        '$baseUrl/profiles',
+      final res = await _dio.post(
+        '$baseUrl/gateway/wake',
         options: Options(
-          validateStatus: (status) => status != null && status < 500,
+          sendTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 65),
         ),
       );
-      if (_isCloudflareHtml(resProfiles)) {
-        throw Exception('Cloudflare Access login potreban (302). Unesite CF Service Token u Postavkama.');
-      }
-      return resProfiles.statusCode == 200 && resProfiles.data is List;
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status == 302) {
-        throw Exception('Cloudflare odbio zahtjev (302 PIN redirect). Dodajte CF Service Token.');
-      } else if (status == 502) {
-        throw Exception('Cloudflare tunel radi, ali VoiceStudio poslužitelj nije pokrenut (502).');
-      } else if (e.type == DioExceptionType.badResponse) {
-        throw Exception('Poslužitelj vratio grešku ($status).');
-      }
-      return false;
+      return res.statusCode == 200;
     } catch (_) {
       return false;
     }
   }
 
-  /// Test both endpoints for Settings diagnostics
+  Future<bool> sleepGateway() async {
+    try {
+      final res = await _dio.post(
+        '$baseUrl/gateway/sleep',
+        options: Options(
+          sendTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Test both endpoints for Settings diagnostics (via non-waking /gateway/status first)
   Future<Map<String, dynamic>> testEndpoints() async {
     bool localOk = false;
     int? localPing;
     String? localError;
+    String? localBackendState;
 
     bool remoteOk = false;
     int? remotePing;
     String? remoteError;
+    String? remoteBackendState;
 
     // Test Local
     try {
       final sw = Stopwatch()..start();
-      final res = await _dio.get(
-        '$localBaseUrl/profiles',
-        options: Options(
-          sendTimeout: const Duration(seconds: 3),
-          receiveTimeout: const Duration(seconds: 3),
-          validateStatus: (status) => status != null && status < 500,
-        ),
-      );
+      final info = await probeUrl(localBaseUrl, timeout: const Duration(seconds: 2));
       sw.stop();
-      if (_isCloudflareHtml(res)) {
-        localError = 'Cloudflare redirect na lokalnoj adresi';
-      } else if (res.statusCode == 200 && res.data is List) {
+      if (info.reachable) {
         localOk = true;
         localPing = sw.elapsedMilliseconds;
+        localBackendState = info.backendStatus;
       } else {
-        localError = 'Status ${res.statusCode}';
+        localError = 'Nije dostupno (izvan lokalne mreže)';
       }
     } catch (e) {
-      localError = 'Nije dostupno (izvan lokalne mreže)';
+      localError = e.toString().replaceAll('Exception: ', '');
     }
 
     // Test Remote
     try {
       final sw = Stopwatch()..start();
-      final res = await _dio.get(
-        '$remoteBaseUrl/profiles',
-        options: Options(
-          sendTimeout: const Duration(seconds: 6),
-          receiveTimeout: const Duration(seconds: 6),
-          validateStatus: (status) => status != null && status < 500,
-        ),
-      );
+      final info = await probeUrl(remoteBaseUrl, timeout: const Duration(seconds: 5));
       sw.stop();
-      if (_isCloudflareHtml(res)) {
-        remoteError = 'Traži se Cloudflare Service Token (302)';
-      } else if (res.statusCode == 200 && res.data is List) {
+      if (info.reachable) {
         remoteOk = true;
         remotePing = sw.elapsedMilliseconds;
+        remoteBackendState = info.backendStatus;
       } else {
-        remoteError = 'Status ${res.statusCode}';
+        remoteError = 'Poslužitelj nije dostupan preko tunela';
       }
     } catch (e) {
-      remoteError = 'Neuspješno spajanje: ${e.toString().split('\n').first}';
+      remoteError = e.toString().replaceAll('Exception: ', '').split('\n').first;
     }
 
     final active = await resolveActiveBaseUrl();
@@ -259,11 +366,13 @@ class ApiClient {
       'localOk': localOk,
       'localPing': localPing,
       'localError': localError,
+      'localState': localBackendState,
       'remoteOk': remoteOk,
       'remotePing': remotePing,
       'remoteError': remoteError,
+      'remoteState': remoteBackendState,
       'active': active,
-      'isUsingLocal': active == localBaseUrl,
+      'isUsingLocal': active == localBaseUrl || active == 'http://127.0.0.1:3900',
     };
   }
 
@@ -289,7 +398,7 @@ class ApiClient {
     }
   }
 
-  /// Streaming speech generation with low-latency chunk delivery
+  /// Streaming speech generation with low-latency chunk delivery and cancellation
   Future<GenerateResult> generateSpeechStream({
     required String text,
     String? profileId,
@@ -299,6 +408,7 @@ class ApiClient {
     int steps = 16,
     double guidanceScale = 2.0,
     File? refAudioFile,
+    CancelToken? cancelToken,
     required void Function(int seq, File chunkWav, int totalChunks) onChunkReady,
   }) async {
     try {
@@ -308,7 +418,7 @@ class ApiClient {
         'num_step': steps,
         'guidance_scale': guidanceScale,
         'stream': true,
-        'max_chunk_chars': 140, // Trigger sentence-level streaming for instant TTFA
+        'max_chunk_chars': 140,
       };
 
       if (language != 'Auto') {
@@ -332,6 +442,7 @@ class ApiClient {
       final response = await _dio.post<ResponseBody>(
         '$baseUrl/generate',
         data: formData,
+        cancelToken: cancelToken,
         options: Options(
           responseType: ResponseType.stream,
           contentType: 'multipart/form-data',
@@ -340,7 +451,7 @@ class ApiClient {
 
       final streamBody = response.data;
       if (streamBody == null) {
-        throw Exception('Server returned empty streaming response');
+        throw Exception('Poslužitelj je vratio prazan stream odgovor');
       }
 
       int sampleRate = 24000;
@@ -358,6 +469,9 @@ class ApiClient {
           .transform(const LineSplitter());
 
       await for (final line in lines) {
+        if (cancelToken?.isCancelled == true) {
+          throw DioException.requestCancelled(requestOptions: RequestOptions(), reason: 'Prekinuto od strane korisnika');
+        }
         if (line.trim().isEmpty) continue;
         try {
           final data = jsonDecode(line) as Map<String, dynamic>;
@@ -392,15 +506,13 @@ class ApiClient {
           }
         } catch (e) {
           if (e is Exception && e.toString().contains('Exception:')) rethrow;
-          // Ignore individual JSON line parse irregularities
         }
       }
 
       if (allPcmBytes.isEmpty) {
-        throw Exception('Server nije vratio nijedan audio segment (provjerite odabrani stil ili profil)');
+        throw Exception('Poslužitelj nije vratio nijedan audio segment.');
       }
 
-      // Assemble complete WAV file from all PCM chunks
       final int totalLength = allPcmBytes.fold(0, (acc, b) => acc + b.length);
       final completePcm = Uint8List(totalLength);
       int offset = 0;
@@ -422,6 +534,9 @@ class ApiClient {
         chunkFiles: chunkFiles,
       );
     } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) {
+        throw Exception('Generiranje prekinuto.');
+      }
       if (e.response?.statusCode == 302 || e.message?.contains('302') == true) {
         throw Exception('Cloudflare blokirao zahtjev (302 redirect). Dodajte CF Service Token u Postavkama.');
       }
@@ -441,6 +556,7 @@ class ApiClient {
     int steps = 16,
     double guidanceScale = 2.0,
     File? refAudioFile,
+    CancelToken? cancelToken,
   }) async {
     try {
       final mapData = <String, dynamic>{
@@ -473,6 +589,7 @@ class ApiClient {
       final response = await _dio.post(
         '$baseUrl/generate',
         data: formData,
+        cancelToken: cancelToken,
         options: Options(
           responseType: ResponseType.bytes,
           contentType: 'multipart/form-data',
@@ -497,9 +614,12 @@ class ApiClient {
           genTime: genTimeStr != null ? double.tryParse(genTimeStr) : null,
         );
       } else {
-        throw Exception('Server returned status ${response.statusCode}');
+        throw Exception('Poslužitelj je vratio status ${response.statusCode}');
       }
     } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) {
+        throw Exception('Generiranje prekinuto.');
+      }
       if (e.response?.statusCode == 302 || e.message?.contains('302') == true) {
         throw Exception('Cloudflare blokirao zahtjev (302 redirect). Dodajte CF Service Token u Postavkama.');
       }
@@ -509,18 +629,37 @@ class ApiClient {
     }
   }
 
+  /// Download an audio file from server history to local temp file
+  Future<File> downloadAudioFile(String filename) async {
+    final url = getAudioFileUrl(filename);
+    final response = await _dio.get<List<int>>(
+      url,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    if (response.statusCode == 200 && response.data != null) {
+      final tempDir = await getTemporaryDirectory();
+      final cleanName = filename.split('/').last.split('\\').last;
+      final file = File('${tempDir.path}/hist_$cleanName');
+      await file.writeAsBytes(response.data!, flush: true);
+      return file;
+    }
+    throw Exception('Preuzimanje audio datoteke nije uspjelo.');
+  }
+
   /// Create a new voice profile via POST /profiles
   Future<VoiceProfile> createProfile({
     required String name,
     required String audioPath,
   }) async {
     try {
+      final ext = audioPath.split('.').last.toLowerCase();
+      final uploadName = ext.isNotEmpty ? 'voice_sample.$ext' : 'voice_sample.wav';
       final formData = FormData.fromMap({
         'name': name,
         'kind': 'clone',
         'ref_audio': await MultipartFile.fromFile(
           audioPath,
-          filename: 'voice_sample.wav',
+          filename: uploadName,
         ),
       });
 
@@ -533,7 +672,7 @@ class ApiClient {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return VoiceProfile.fromJson(response.data as Map<String, dynamic>);
       }
-      throw Exception('Server returned ${response.statusCode}: ${response.data}');
+      throw Exception('Poslužitelj vratio ${response.statusCode}: ${response.data}');
     } catch (e) {
       throw Exception('Greška kreiranja profila: $e');
     }
@@ -560,6 +699,208 @@ class ApiClient {
       return response.statusCode == 200;
     } catch (e) {
       throw Exception('Greška brisanja profila: $e');
+    }
+  }
+
+  /// Speech-to-Speech Voice Conversion via POST /convert
+  Future<ConvertResult> convertSpeech({
+    required File sourceAudio,
+    required String profileId,
+    bool matchDuration = true,
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      final ext = sourceAudio.path.split('.').last.toLowerCase();
+      final uploadName = ext.isNotEmpty ? 'source.$ext' : 'source.wav';
+
+      final formData = FormData.fromMap({
+        'audio': await MultipartFile.fromFile(sourceAudio.path, filename: uploadName),
+        'profile_id': profileId,
+        'match_duration': matchDuration,
+      });
+
+      final response = await _dio.post(
+        '$baseUrl/convert',
+        data: formData,
+        cancelToken: cancelToken,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+
+      if (response.statusCode == 200 && response.data is Map) {
+        final data = response.data as Map<String, dynamic>;
+        final audioUrlPath = data['audio_url']?.toString() ?? '';
+        final text = data['text']?.toString() ?? '';
+        final duration = (data['duration_s'] as num?)?.toDouble() ?? 0.0;
+        final genTime = (data['gen_time_s'] as num?)?.toDouble();
+        final id = data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+        final fullAudioUrl = audioUrlPath.startsWith('http')
+            ? audioUrlPath
+            : '$baseUrl${audioUrlPath.startsWith("/") ? "" : "/"}$audioUrlPath';
+
+        final wavResp = await _dio.get<List<int>>(
+          fullAudioUrl,
+          cancelToken: cancelToken,
+          options: Options(responseType: ResponseType.bytes),
+        );
+
+        final tempDir = await getTemporaryDirectory();
+        final outFile = File('${tempDir.path}/convert_${DateTime.now().millisecondsSinceEpoch}.wav');
+        await outFile.writeAsBytes(wavResp.data!, flush: true);
+
+        return ConvertResult(
+          audioFile: outFile,
+          recognizedText: text,
+          duration: duration,
+          genTime: genTime,
+          id: id,
+        );
+      }
+      throw Exception('Poslužitelj je vratio status ${response.statusCode}');
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) {
+        throw Exception('Pretvorba glasa prekinuta.');
+      }
+      final detail = e.response?.data is Map ? (e.response?.data['detail']?.toString()) : null;
+      throw Exception(detail ?? 'Greška pri pretvorbi glasa: ${e.message ?? e}');
+    } catch (e) {
+      throw Exception('Greška pri pretvorbi glasa: $e');
+    }
+  }
+
+  /// AI Vocal Isolation / Denoise via POST /clean-audio (Demucs)
+  Future<File> cleanAudio(File rawAudio) async {
+    try {
+      final ext = rawAudio.path.split('.').last.toLowerCase();
+      final uploadName = ext.isNotEmpty ? 'raw.$ext' : 'raw.wav';
+
+      final formData = FormData.fromMap({
+        'audio': await MultipartFile.fromFile(rawAudio.path, filename: uploadName),
+      });
+
+      final response = await _dio.post<List<int>>(
+        '$baseUrl/clean-audio',
+        data: formData,
+        options: Options(
+          responseType: ResponseType.bytes,
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(seconds: 240),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null && response.data!.isNotEmpty) {
+        final tempDir = await getTemporaryDirectory();
+        final cleanedFile = File('${tempDir.path}/clean_${DateTime.now().millisecondsSinceEpoch}.wav');
+        await cleanedFile.writeAsBytes(response.data!, flush: true);
+        return cleanedFile;
+      }
+      throw Exception('Poslužitelj nije vratio očišćeni audio zapis.');
+    } catch (e) {
+      throw Exception('Greška čišćenja šuma: $e');
+    }
+  }
+
+  /// Parse a free-text voice description into structured vd_states + instruct via POST /design/describe
+  Future<Map<String, dynamic>> describeVoice(String description) async {
+    try {
+      final response = await _dio.post(
+        '$baseUrl/design/describe',
+        data: {'description': description},
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+      throw Exception('Neispravan odgovor za dizajn glasa.');
+    } catch (e) {
+      throw Exception('Greška analize opisa glasa: $e');
+    }
+  }
+
+  /// Create a designed voice profile without reference audio via POST /profiles (kind='design')
+  Future<VoiceProfile> createDesignedProfile({
+    required String name,
+    required Map<String, dynamic> vdStates,
+    required String instruct,
+    String language = 'Auto',
+    String sampleScript = '',
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'name': name,
+        'kind': 'design',
+        'vd_states': jsonEncode(vdStates),
+        'instruct': instruct,
+        'language': language,
+        if (sampleScript.trim().isNotEmpty) 'ref_text': sampleScript.trim(),
+      });
+
+      final response = await _dio.post(
+        '$baseUrl/profiles',
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return VoiceProfile.fromJson(response.data as Map<String, dynamic>);
+      }
+      throw Exception('Poslužitelj vratio ${response.statusCode}: ${response.data}');
+    } catch (e) {
+      throw Exception('Greška kreiranja dizajniranog profila: $e');
+    }
+  }
+
+  /// Browse voice archetypes catalog via GET /archetypes
+  Future<List<ArchetypeItem>> getArchetypes({
+    String? query,
+    String? gender,
+    int limit = 80,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{'limit': limit};
+      if (query != null && query.trim().isNotEmpty) queryParams['q'] = query.trim();
+      if (gender != null && gender.trim().isNotEmpty && gender != 'All') {
+        queryParams['gender'] = gender.toLowerCase();
+      }
+
+      final response = await _dio.get(
+        '$baseUrl/archetypes',
+        queryParameters: queryParams,
+      );
+
+      if (response.statusCode == 200 && response.data is Map) {
+        final items = (response.data as Map)['items'];
+        if (items is List) {
+          return items
+              .map((item) => ArchetypeItem.fromJson(Map<String, dynamic>.from(item as Map)))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      throw Exception('Greška dohvaćanja kataloga arhetipova: $e');
+    }
+  }
+
+  String getArchetypePreviewUrl(String archetypeId) {
+    return '$baseUrl/archetypes/$archetypeId/preview';
+  }
+
+  /// Materialize an archetype into a reusable voice profile via POST /archetypes/{id}/use
+  Future<VoiceProfile> useArchetype(String archetypeId, {String? customName}) async {
+    try {
+      final response = await _dio.post(
+        '$baseUrl/archetypes/$archetypeId/use',
+        queryParameters: customName != null && customName.trim().isNotEmpty
+            ? {'name': customName.trim()}
+            : null,
+        options: Options(receiveTimeout: const Duration(seconds: 120)),
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return VoiceProfile.fromJson(Map<String, dynamic>.from(response.data as Map));
+      }
+      throw Exception('Poslužitelj vratio ${response.statusCode}');
+    } catch (e) {
+      throw Exception('Greška aktivacije arhetipa: $e');
     }
   }
 }

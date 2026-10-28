@@ -4,42 +4,60 @@ import '../config/theme.dart';
 class ConnectionBadge extends StatelessWidget {
   final bool isConnected;
   final bool isChecking;
+  final bool isUsingLocal;
+  final String backendStatus; // 'RUNNING', 'SLEEPING', 'STARTING', 'DIRECT', 'OFFLINE'
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const ConnectionBadge({
     super.key,
     required this.isConnected,
     required this.isChecking,
+    this.isUsingLocal = false,
+    this.backendStatus = 'OFFLINE',
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = isChecking
-        ? AppTheme.accentAmber
-        : (isConnected ? AppTheme.accentGreen : Colors.redAccent);
+    final bool isSleeping = isConnected && backendStatus == 'SLEEPING';
+    final bool isStarting = isChecking || backendStatus == 'STARTING';
 
-    final statusText = isChecking
-        ? 'Connecting'
-        : (isConnected ? 'Connected' : 'Offline');
+    final Color statusColor = isStarting
+        ? AppTheme.accentAmber
+        : (!isConnected
+            ? Colors.redAccent
+            : (isSleeping ? AppTheme.accentCyan : AppTheme.accentGreen));
+
+    final String statusText = isStarting
+        ? (backendStatus == 'STARTING' ? 'Buđenje GPU-a...' : 'Provjera...')
+        : (!isConnected
+            ? 'Izvan mreže'
+            : (isSleeping ? 'Standby (0% GPU)' : 'Spreman'));
+
+    final String networkLabel = isUsingLocal ? 'Lokalno' : 'Cloudflare';
+    final IconData networkIcon = isUsingLocal ? Icons.wifi_rounded : Icons.cloud_rounded;
+    final Color networkIconColor = isUsingLocal ? AppTheme.accentCyan : AppTheme.accentCloudflare;
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: const Color(0xFF131A29),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isConnected
-                ? AppTheme.accentCyan.withValues(alpha: 0.35)
+                ? statusColor.withValues(alpha: 0.35)
                 : AppTheme.border,
             width: 1,
           ),
           boxShadow: isConnected
               ? [
                   BoxShadow(
-                    color: AppTheme.accentCyan.withValues(alpha: 0.15),
+                    color: statusColor.withValues(alpha: 0.15),
                     blurRadius: 8,
                   )
                 ]
@@ -49,17 +67,17 @@ class ConnectionBadge extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(Icons.cloud_rounded, color: AppTheme.accentCloudflare, size: 15),
+            Icon(networkIcon, color: networkIconColor, size: 15),
             const SizedBox(width: 5),
-            const Text(
-              'Cloudflare',
-              style: TextStyle(
+            Text(
+              networkLabel,
+              style: const TextStyle(
                 color: AppTheme.textPrimary,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 7),
             Container(
               width: 6,
               height: 6,
@@ -75,15 +93,19 @@ class ConnectionBadge extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             Text(
               statusText,
               style: TextStyle(
                 color: statusColor,
-                fontSize: 10,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (isSleeping) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.bedtime_rounded, size: 12, color: AppTheme.accentCyan),
+            ],
           ],
         ),
       ),

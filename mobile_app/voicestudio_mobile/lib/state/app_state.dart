@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/voice_profile.dart';
@@ -30,6 +31,13 @@ class AppState extends ChangeNotifier {
   bool _isConnected = false;
   bool get isConnected => _isConnected;
 
+  String _backendStatus = 'OFFLINE'; // 'RUNNING', 'SLEEPING', 'STARTING', 'DIRECT', 'OFFLINE'
+  String get backendStatus => _backendStatus;
+  bool get isBackendSleeping => _backendStatus == 'SLEEPING';
+
+  int _idleSecondsRemaining = 0;
+  int get idleSecondsRemaining => _idleSecondsRemaining;
+
   bool _isCheckingConnection = false;
   bool get isCheckingConnection => _isCheckingConnection;
 
@@ -44,6 +52,8 @@ class AppState extends ChangeNotifier {
 
   bool _isGenerating = false;
   bool get isGenerating => _isGenerating;
+
+  CancelToken? _activeCancelToken;
 
   double _generationElapsed = 0.0;
   double get generationElapsed => _generationElapsed;
@@ -100,6 +110,9 @@ class AppState extends ChangeNotifier {
   double _guidanceScale = 2.0;
   double get guidanceScale => _guidanceScale;
 
+  String _draftText = '';
+  String get draftText => _draftText;
+
   List<SavedAudio> _savedAudios = [];
   List<SavedAudio> get savedAudios => _savedAudios;
 
@@ -113,11 +126,23 @@ class AppState extends ChangeNotifier {
 
     _speed = storage.getSpeed();
     _language = storage.getLanguage();
-    _instruct = '';
-    await storage.setInstruct('');
+    _instruct = storage.getInstruct();
     _steps = storage.getSteps();
     _guidanceScale = storage.getGuidanceScale();
+    _draftText = storage.getDraftText();
     _savedAudios = storage.getSavedAudios();
+
+    // Load cached voice profiles immediately so UI is instant even when gateway is SLEEPING
+    final cached = storage.getCachedProfiles();
+    if (cached.isNotEmpty) {
+      _profiles = cached;
+      final savedId = storage.getSelectedVoiceId();
+      if (savedId != null && _profiles.any((p) => p.id == savedId)) {
+        _selectedProfile = _profiles.firstWhere((p) => p.id == savedId);
+      } else {
+        _selectedProfile = _profiles.first;
+      }
+    }
 
     _isInitialized = true;
     notifyListeners();
@@ -126,21 +151,59 @@ class AppState extends ChangeNotifier {
     await testConnectionAndRefresh();
   }
 
-
-  Future<void> testConnectionAndRefresh() async {
+  Future<void> testConnectionAndRefresh({bool forceWake = false}) async {
     _isCheckingConnection = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      _isConnected = await api.checkConnection();
+      final info = await api.checkGatewayConnection();
+      _isConnected = info.reachable;
+      _backendStatus = info.backendStatus;
+      _idleSecondsRemaining = info.idleSecondsRemaining;
+
       if (_isConnected) {
-        await refreshProfiles();
-        await refreshHistory();
+        // Only query /profiles and /history if backend is already awake, or if we have no cached profiles, or if user requested forceWake
+        if (!isBackendSleeping || _profiles.isEmpty || forceWake) {
+          await refreshProfiles();
+          await refreshHistory();
+          _backendStatus = 'RUNNING';
+        }
       }
     } catch (e) {
       _isConnected = false;
-      _errorMessage = e.toString();
+      _backendStatus = 'OFFLINE';
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+    } finally {
+      _isCheckingConnection = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> wakeEngine() async {
+    _isCheckingConnection = true;
+    _backendStatus = 'STARTING';
+    notifyListeners();
+    try {
+      final ok = await api.wakeGateway();
+      await testConnectionAndRefresh(forceWake: true);
+      return ok;
+    } finally {
+      _isCheckingConnection = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> sleepEngine() async {
+    _isCheckingConnection = true;
+    notifyListeners();
+    try {
+      final ok = await api.sleepGateway();
+      if (ok) {
+        _backendStatus = 'SLEEPING';
+        _idleSecondsRemaining = 0;
+      }
+      return ok;
     } finally {
       _isCheckingConnection = false;
       notifyListeners();
@@ -154,8 +217,14 @@ class AppState extends ChangeNotifier {
       final res = await api.testEndpoints();
       _isConnected = (res['localOk'] == true || res['remoteOk'] == true);
       if (_isConnected) {
-        unawaited(refreshProfiles());
-        unawaited(refreshHistory());
+        final activeState = (res['isUsingLocal'] == true ? res['localState'] : res['remoteState'])?.toString() ?? 'RUNNING';
+        _backendStatus = activeState;
+        if (_backendStatus != 'SLEEPING' || _profiles.isEmpty) {
+          unawaited(refreshProfiles());
+          unawaited(refreshHistory());
+        }
+      } else {
+        _backendStatus = 'OFFLINE';
       }
       return res;
     } finally {
@@ -169,7 +238,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _profiles = await api.getProfiles();
+      final freshProfiles = await api.getProfiles();
+      if (freshProfiles.isNotEmpty) {
+        _profiles = freshProfiles;
+        await storage.setCachedProfiles(freshProfiles);
+      }
       final savedId = storage.getSelectedVoiceId();
       if (savedId != null && _profiles.any((p) => p.id == savedId)) {
         _selectedProfile = _profiles.firstWhere((p) => p.id == savedId);
@@ -177,7 +250,7 @@ class AppState extends ChangeNotifier {
         _selectedProfile = _profiles.first;
       }
     } catch (e) {
-      _errorMessage = 'Greška učitavanja profila: $e';
+      _errorMessage = 'Greška učitavanja profila: ${e.toString().replaceAll("Exception: ", "")}';
     } finally {
       _isLoadingProfiles = false;
       notifyListeners();
@@ -188,6 +261,12 @@ class AppState extends ChangeNotifier {
     _selectedProfile = profile;
     storage.setSelectedVoiceId(profile?.id);
     notifyListeners();
+  }
+
+  Future<void> setDraftText(String text, {bool notify = false}) async {
+    _draftText = text;
+    await storage.setDraftText(text);
+    if (notify) notifyListeners();
   }
 
   Future<void> setSpeed(double newSpeed) async {
@@ -254,13 +333,29 @@ class AppState extends ChangeNotifier {
     await testConnectionAndRefresh();
   }
 
+  Future<void> cancelGeneration() async {
+    _activeCancelToken?.cancel('Korisnik prekinuo generiranje');
+    _activeCancelToken = null;
+    _timer?.cancel();
+    _isGenerating = false;
+    await audio.stop();
+    notifyListeners();
+  }
+
   Future<void> generateSpeech(String text) async {
     if (text.trim().isEmpty) return;
+
+    _activeCancelToken?.cancel();
+    final cancelToken = CancelToken();
+    _activeCancelToken = cancelToken;
 
     _isGenerating = true;
     _generationElapsed = 0.0;
     _streamingChunkCount = 0;
     _errorMessage = null;
+    if (_backendStatus == 'SLEEPING') {
+      _backendStatus = 'STARTING';
+    }
     notifyListeners();
 
     final startTime = DateTime.now();
@@ -281,7 +376,9 @@ class AppState extends ChangeNotifier {
           instruct: _instruct,
           steps: _steps,
           guidanceScale: _guidanceScale,
+          cancelToken: cancelToken,
           onChunkReady: (seq, chunkWav, totalChunks) {
+            _backendStatus = 'RUNNING';
             _streamingChunkCount = seq + 1;
             audio.addStreamChunk(chunkWav);
             notifyListeners();
@@ -297,17 +394,23 @@ class AppState extends ChangeNotifier {
           instruct: _instruct,
           steps: _steps,
           guidanceScale: _guidanceScale,
+          cancelToken: cancelToken,
         );
         await audio.playFile(result.audioFile);
       }
 
+      _backendStatus = 'RUNNING';
       _lastGeneration = result;
       unawaited(refreshHistory());
     } catch (e) {
-      _errorMessage = e.toString();
+      final msg = e.toString().replaceAll('Exception: ', '');
+      if (!msg.contains('prekinuto')) {
+        _errorMessage = msg;
+      }
     } finally {
       _timer?.cancel();
       _isGenerating = false;
+      _activeCancelToken = null;
       notifyListeners();
     }
   }
@@ -332,11 +435,52 @@ class AppState extends ChangeNotifier {
   }) async {
     try {
       final profile = await api.createProfile(name: name, audioPath: audioPath);
+      _backendStatus = 'RUNNING';
       await refreshProfiles();
       selectProfile(profile);
       return profile;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<VoiceProfile> createDesignedProfile({
+    required String name,
+    required Map<String, dynamic> vdStates,
+    required String instruct,
+    String language = 'Auto',
+    String sampleScript = '',
+  }) async {
+    try {
+      final profile = await api.createDesignedProfile(
+        name: name,
+        vdStates: vdStates,
+        instruct: instruct,
+        language: language,
+        sampleScript: sampleScript,
+      );
+      _backendStatus = 'RUNNING';
+      await refreshProfiles();
+      selectProfile(profile);
+      return profile;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<VoiceProfile> useArchetype(String archetypeId, {String? customName}) async {
+    try {
+      final profile = await api.useArchetype(archetypeId, customName: customName);
+      _backendStatus = 'RUNNING';
+      await refreshProfiles();
+      selectProfile(profile);
+      return profile;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       rethrow;
     }
@@ -374,7 +518,7 @@ class AppState extends ChangeNotifier {
     final targetPath = '${libDir.path}/take_$id.wav';
     final copiedFile = await file.copy(targetPath);
 
-    final title = text.trim().length > 30 ? '${text.trim().substring(0, 30)}...' : text.trim();
+    final title = text.trim().length > 35 ? '${text.trim().substring(0, 35)}...' : text.trim();
 
     final item = SavedAudio(
       id: id,
@@ -393,16 +537,30 @@ class AppState extends ChangeNotifier {
     return item;
   }
 
+  /// Download a server history item and save it to offline phone library
+  Future<SavedAudio> saveHistoryItemToLibrary(GenerationHistory historyItem) async {
+    final tempFile = await api.downloadAudioFile(historyItem.filename);
+    return await saveToLibrary(
+      file: tempFile,
+      text: historyItem.text,
+      profileName: historyItem.profileName ?? 'Klonirani glas',
+      duration: historyItem.duration,
+    );
+  }
+
   Future<void> deleteSavedAudio(String id) async {
-    final item = _savedAudios.firstWhere((a) => a.id == id, orElse: () => SavedAudio(
-      id: '',
-      title: '',
-      filePath: '',
-      duration: 0,
-      createdAt: DateTime.now(),
-      profileName: '',
-      text: '',
-    ));
+    final item = _savedAudios.firstWhere(
+      (a) => a.id == id,
+      orElse: () => SavedAudio(
+        id: '',
+        title: '',
+        filePath: '',
+        duration: 0,
+        createdAt: DateTime.now(),
+        profileName: '',
+        text: '',
+      ),
+    );
 
     if (item.filePath.isNotEmpty) {
       final f = File(item.filePath);

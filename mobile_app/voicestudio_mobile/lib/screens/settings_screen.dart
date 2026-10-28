@@ -75,7 +75,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     final state = context.read<AppState>();
-    // First save in-flight form edits
     await state.updateConnectionSettings(
       newLocalUrl: _localController.text.trim(),
       newRemoteUrl: _remoteController.text.trim(),
@@ -119,77 +118,129 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // 1. Connection Status Card
+          // 1. Connection & Gateway GPU Power Card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: state.isConnected
-                  ? AppTheme.accentGreen.withValues(alpha: 0.1)
+                  ? (state.isBackendSleeping
+                      ? AppTheme.accentCyan.withValues(alpha: 0.1)
+                      : AppTheme.accentGreen.withValues(alpha: 0.1))
                   : AppTheme.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: state.isConnected
-                    ? AppTheme.accentGreen.withValues(alpha: 0.3)
+                    ? (state.isBackendSleeping
+                        ? AppTheme.accentCyan.withValues(alpha: 0.35)
+                        : AppTheme.accentGreen.withValues(alpha: 0.3))
                     : AppTheme.primary.withValues(alpha: 0.3),
               ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  state.isConnected ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-                  color: state.isConnected ? AppTheme.accentGreen : AppTheme.primary,
-                  size: 32,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        runSpacing: 4,
+                Row(
+                  children: [
+                    Icon(
+                      state.isConnected
+                          ? (state.isBackendSleeping ? Icons.bedtime_rounded : Icons.cloud_done_rounded)
+                          : Icons.cloud_off_rounded,
+                      color: state.isConnected
+                          ? (state.isBackendSleeping ? AppTheme.accentCyan : AppTheme.accentGreen)
+                          : AppTheme.primary,
+                      size: 30,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            state.isConnected ? 'Povezano' : 'Nije povezano',
-                            style: TextStyle(
-                              color: state.isConnected ? AppTheme.accentGreen : AppTheme.primary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          if (state.isConnected)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: state.isUsingLocalUrl
-                                    ? AppTheme.accentCyan.withValues(alpha: 0.2)
-                                    : AppTheme.accentAmber.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                state.isUsingLocalUrl ? 'LOKALNO' : 'CLOUDFLARE',
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              Text(
+                                state.isConnected
+                                    ? (state.isBackendSleeping ? 'Povezano (Standby 0% GPU)' : 'Povezano (GPU Aktivan)')
+                                    : 'Nije povezano',
                                 style: TextStyle(
-                                  color: state.isUsingLocalUrl ? AppTheme.accentCyan : AppTheme.accentAmber,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
+                                  color: state.isConnected
+                                      ? (state.isBackendSleeping ? AppTheme.accentCyan : AppTheme.accentGreen)
+                                      : AppTheme.primary,
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            ),
+                              if (state.isConnected)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: state.isUsingLocalUrl
+                                        ? AppTheme.accentCyan.withValues(alpha: 0.2)
+                                        : AppTheme.accentAmber.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    state.isUsingLocalUrl ? 'LOKALNO' : 'CLOUDFLARE',
+                                    style: TextStyle(
+                                      color: state.isUsingLocalUrl ? AppTheme.accentCyan : AppTheme.accentAmber,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            state.isConnected
+                                ? 'Aktivna adresa: ${state.activeBaseUrl}'
+                                : (state.errorMessage ?? 'Provjerite je li VoiceStudio servis pokrenut'),
+                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        state.isConnected
-                            ? 'Aktivna adresa: ${state.activeBaseUrl}'
-                            : (state.errorMessage ?? 'Provjerite je li VoiceStudio pokrenut'),
-                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12.5),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+                if (state.isConnected && state.backendStatus != 'DIRECT') ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: state.isCheckingConnection
+                          ? null
+                          : () async {
+                              if (state.isBackendSleeping) {
+                                await state.wakeEngine();
+                              } else {
+                                await state.sleepEngine();
+                              }
+                            },
+                      icon: Icon(
+                        state.isBackendSleeping ? Icons.power_settings_new_rounded : Icons.bedtime_outlined,
+                        size: 17,
+                      ),
+                      label: Text(
+                        state.isBackendSleeping
+                            ? 'Probudi GPU unaprijed (Wake)'
+                            : 'Uspavaj GPU odmah (Oslobodi VRAM)',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: state.isBackendSleeping ? AppTheme.accentGreen : AppTheme.accentCyan,
+                        side: BorderSide(
+                          color: (state.isBackendSleeping ? AppTheme.accentGreen : AppTheme.accentCyan)
+                              .withValues(alpha: 0.45),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -224,7 +275,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 6),
           Text(
             _connectionMode == 'auto'
-                ? '⚡ Automatski provjerava brzu kućnu mrežu/USB, a ako ste izvan kuće automatski prebacuje na Cloudflare tunel.'
+                ? '⚡ Automatski provjerava brzu kućnu mrežu/USB bez buđenja GPU-a, a izvan kuće prebacuje na Cloudflare tunel.'
                 : _connectionMode == 'local'
                     ? '🏠 Koristi samo lokalnu mrežu (Wi-Fi ili USB kabel).'
                     : '☁️ Koristi isključivo Cloudflare Zero Trust tunel.',
@@ -588,7 +639,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: 'Lokalna veza (Wi-Fi / USB)',
             isOk: localOk,
             detail: localOk
-                ? 'Dostupno (${res['localPing']} ms)'
+                ? 'Dostupno (${res['localPing']} ms • ${res['localState'] ?? "OK"})'
                 : (res['localError'] ?? 'Nije dostupno'),
           ),
           const Divider(color: AppTheme.border, height: 16),
@@ -597,7 +648,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: 'Cloudflare Tunel (Udaljeno)',
             isOk: remoteOk,
             detail: remoteOk
-                ? 'Dostupno (${res['remotePing']} ms)'
+                ? 'Dostupno (${res['remotePing']} ms • ${res['remoteState'] ?? "OK"})'
                 : (res['remoteError'] ?? 'Nije dostupno'),
           ),
         ],

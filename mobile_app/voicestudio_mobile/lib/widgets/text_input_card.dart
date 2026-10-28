@@ -52,7 +52,7 @@ class TextInputCard extends StatelessWidget {
                   children: [
                     const Expanded(
                       child: Text(
-                        'Tekst',
+                        'Tekst za sintezu',
                         style: TextStyle(
                           color: AppTheme.textPrimary,
                           fontSize: 14,
@@ -81,7 +81,7 @@ class TextInputCard extends StatelessWidget {
                                 Icon(Icons.content_paste_rounded, size: 13, color: AppTheme.accentCyan),
                                 SizedBox(width: 4),
                                 Text(
-                                  'Paste',
+                                  'Zalijepi',
                                   style: TextStyle(
                                     color: AppTheme.textPrimary,
                                     fontSize: 11.5,
@@ -129,7 +129,7 @@ class TextInputCard extends StatelessWidget {
                           const SizedBox(width: 4),
                           IconButton(
                             icon: const Icon(Icons.close_rounded, size: 17, color: AppTheme.textMuted),
-                            tooltip: 'Clear text',
+                            tooltip: 'Očisti tekst',
                             visualDensity: VisualDensity.compact,
                             onPressed: onClear,
                           ),
@@ -153,7 +153,7 @@ class TextInputCard extends StatelessWidget {
                     height: 1.45,
                   ),
                   decoration: const InputDecoration(
-                    hintText: 'Enter text here to generate natural speech in selected voice...',
+                    hintText: 'Unesite ili zalijepite tekst za generiranje prirodnog govora...',
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
@@ -170,7 +170,7 @@ class TextInputCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '$wordCount words • $charCount chars',
+                      '$wordCount riječi • $charCount znakova',
                       style: const TextStyle(
                         color: AppTheme.textMuted,
                         fontSize: 11.5,
@@ -178,7 +178,7 @@ class TextInputCard extends StatelessWidget {
                     ),
                     if (charCount > 0)
                       Text(
-                        '~${(wordCount / 2.5).ceil()}s estimated',
+                        '~${(wordCount / 2.5).ceil()}s procjena',
                         style: const TextStyle(
                           color: AppTheme.accentCyan,
                           fontSize: 11.5,
