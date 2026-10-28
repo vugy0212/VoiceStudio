@@ -40,6 +40,8 @@ class AppState extends ChangeNotifier {
 
   List<String> _allowedVoiceIds = List<String>.from(HubConnectionConfig.defaultAllowedVoiceIds);
   List<String> get allowedVoiceIds => _allowedVoiceIds;
+  List<VoiceGroup> _voiceGroups = List<VoiceGroup>.from(VoiceGroup.defaultGroups);
+  List<VoiceGroup> get voiceGroups => _voiceGroups;
   final Set<String> _myCreatedVoiceIds = {};
 
   bool _isConnected = false;
@@ -146,7 +148,32 @@ class AppState extends ChangeNotifier {
   ];
 
   List<VoiceProfile> _filterProfilesForCurrentUser(List<VoiceProfile> all) {
-    if (isAdmin || isPremium) return all;
+    if (isAdmin) return all;
+    final user = _currentUser;
+
+    // 1. Check if the user is assigned to a specific Voice Group
+    if (user != null && user.voiceGroupId.isNotEmpty && user.voiceGroupId != 'custom') {
+      final group = _voiceGroups
+          .where((g) => g.id == user.voiceGroupId)
+          .firstOrNull;
+      if (group != null) {
+        return all.where((p) {
+          return group.voiceIds.contains(p.id) || _myCreatedVoiceIds.contains(p.id);
+        }).toList();
+      }
+    }
+
+    // 2. Check if the user has a custom per-user voice selection
+    if (user != null && user.customVoiceIds.isNotEmpty) {
+      return all.where((p) {
+        return user.customVoiceIds.contains(p.id) || _myCreatedVoiceIds.contains(p.id);
+      }).toList();
+    }
+
+    // 3. Premium users (with no custom restriction) see all profiles
+    if (isPremium) return all;
+
+    // 4. Standard Demo users see the Demo group (allowedVoiceIds) + own voices
     return all.where((p) {
       if (_allowedVoiceIds.contains(p.id)) return true;
       if (_myCreatedVoiceIds.contains(p.id)) return true;
@@ -222,6 +249,18 @@ class AppState extends ChangeNotifier {
 
   Future<void> _applyHubConnectionConfig(HubConnectionConfig cfg) async {
     _allowedVoiceIds = List<String>.from(cfg.allowedVoiceIds);
+    _voiceGroups = List<VoiceGroup>.from(cfg.voiceGroups);
+    if (_currentUser != null &&
+        _currentUser!.voiceGroupId.isNotEmpty &&
+        _currentUser!.voiceGroupId != 'custom') {
+      final matched = _voiceGroups
+          .where((g) => g.id == _currentUser!.voiceGroupId)
+          .firstOrNull;
+      if (matched != null) {
+        _currentUser = _currentUser!.copyWith(customVoiceIds: matched.voiceIds);
+        await storage.setCurrentUser(_currentUser);
+      }
+    }
     if (cfg.remoteUrl.isNotEmpty) {
       _remoteServerUrl = cfg.remoteUrl;
       await storage.setRemoteUrl(cfg.remoteUrl);
@@ -691,6 +730,34 @@ class AppState extends ChangeNotifier {
       await refreshProfiles();
       selectProfile(profile);
       return profile;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<VoiceProfile> updateProfile({
+    required String profileId,
+    String? name,
+    String? language,
+    String? refText,
+    String? instruct,
+  }) async {
+    try {
+      final updated = await api.updateProfile(
+        profileId: profileId,
+        name: name,
+        language: language,
+        refText: refText,
+        instruct: instruct,
+      );
+      await refreshProfiles();
+      if (_selectedProfile?.id == profileId) {
+        _selectedProfile = updated;
+        notifyListeners();
+      }
+      return updated;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();

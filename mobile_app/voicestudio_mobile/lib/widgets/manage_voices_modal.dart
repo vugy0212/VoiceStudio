@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../config/constants.dart';
 import '../config/theme.dart';
 import '../models/voice_profile.dart';
 import '../screens/voice_clone_screen.dart';
@@ -51,6 +52,137 @@ class _ManageVoicesModalState extends State<ManageVoicesModal> {
       }
     } finally {
       if (mounted) setState(() => _previewingProfileId = null);
+    }
+  }
+
+  Future<void> _showEditProfileDialog(VoiceProfile profile) async {
+    final state = context.read<AppState>();
+    final nameCtrl = TextEditingController(text: profile.name);
+    final refTextCtrl = TextEditingController(text: profile.refText ?? '');
+    String selectedLang = AppConstants.availableLanguages.contains(profile.language)
+        ? profile.language
+        : 'Auto';
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surfaceElevated,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.edit_note_rounded, color: AppTheme.accentCyan, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Uredi glas: ${profile.name}',
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                      decoration: const InputDecoration(
+                        labelText: 'Naziv glasa',
+                        hintText: 'Unesite novi naziv glasa',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Zadani jezik glasa:',
+                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: selectedLang,
+                          isExpanded: true,
+                          dropdownColor: AppTheme.surfaceElevated,
+                          style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
+                          items: AppConstants.availableLanguages.map((lang) {
+                            return DropdownMenuItem(value: lang, child: Text(lang));
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) setModalState(() => selectedLang = val);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: refTextCtrl,
+                      maxLines: 3,
+                      minLines: 2,
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+                      decoration: const InputDecoration(
+                        labelText: 'Transkript referentne snimke (opcionalno)',
+                        hintText: 'Tekst koji se izgovara na referentnoj snimci...',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Odustani', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.save_rounded, size: 17),
+                  label: const Text('Spremi izmjene'),
+                  onPressed: () async {
+                    if (nameCtrl.text.trim().isEmpty) return;
+                    try {
+                      await state.updateProfile(
+                        profileId: profile.id,
+                        name: nameCtrl.text.trim(),
+                        language: selectedLang,
+                        refText: refTextCtrl.text.trim(),
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx, true);
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text('Greška pri spremanju: $e'),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Podaci o glasu su uspješno ažurirani!'),
+          backgroundColor: AppTheme.accentGreen,
+        ),
+      );
     }
   }
 
@@ -175,7 +307,7 @@ class _ManageVoicesModalState extends State<ManageVoicesModal> {
                         ),
                       ),
                       Text(
-                        'Odaberite, preslušajte ili obrišite profile glasova',
+                        'Odaberite, preslušajte, preimenujte ili obrišite glasove',
                         style: TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 11.5,
@@ -211,12 +343,6 @@ class _ManageVoicesModalState extends State<ManageVoicesModal> {
                           'Nema kreiranih profila glasova',
                           style: TextStyle(color: AppTheme.textSecondary, fontSize: 15, fontWeight: FontWeight.w600),
                         ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Klonirajte novi glas snimanjem sa mikrofona ili prijenosom audio datoteke.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
-                        ),
                       ],
                     ),
                   );
@@ -243,7 +369,6 @@ class _ManageVoicesModalState extends State<ManageVoicesModal> {
                       ),
                       child: Row(
                         children: [
-                          // Profile Initial Icon
                           Container(
                             width: 38,
                             height: 38,
@@ -263,8 +388,6 @@ class _ManageVoicesModalState extends State<ManageVoicesModal> {
                             ),
                           ),
                           const SizedBox(width: 12),
-
-                          // Name & Info
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,47 +427,58 @@ class _ManageVoicesModalState extends State<ManageVoicesModal> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  profile.kind == 'clone' ? 'Klonirani referentni glas' : 'Dizajnirani glas',
+                                  '${profile.kind == 'clone' ? 'Klonirani glas' : 'Dizajnirani glas'} • ${profile.language}',
                                   style: const TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
                                 ),
                               ],
                             ),
                           ),
-
                           // Action: Preview Sample
                           IconButton(
                             icon: Icon(
                               isPreviewing ? Icons.stop_circle_rounded : Icons.volume_up_rounded,
                               color: isPreviewing ? AppTheme.primaryNeon : AppTheme.accentCyan,
-                              size: 24,
+                              size: 22,
                             ),
                             tooltip: 'Poslušaj uzorak',
+                            visualDensity: VisualDensity.compact,
                             onPressed: () => _playProfileSample(profile),
                           ),
-
+                          // Action: Edit Voice Name / Metadata (Admin)
+                          if (state.isAdmin)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.edit_outlined,
+                                size: 20,
+                                color: AppTheme.accentCyan,
+                              ),
+                              tooltip: 'Preimenuj / Uredi glas',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _showEditProfileDialog(profile),
+                            ),
                           // Action: Select (if not already active)
                           if (!isSelected)
                             TextButton(
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               onPressed: () => state.selectProfile(profile),
-                              child: const Text('Odaberi', style: TextStyle(fontSize: 12.5)),
+                              child: const Text('Odaberi', style: TextStyle(fontSize: 12)),
                             ),
-
                           // Action: Delete Profile
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              size: 22,
-                              color: Colors.redAccent,
+                          if (state.isAdmin)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 20,
+                                color: Colors.redAccent,
+                              ),
+                              tooltip: 'Obriši profil',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _confirmDelete(profile),
                             ),
-                            tooltip: 'Obriši profil',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => _confirmDelete(profile),
-                          ),
                         ],
                       ),
                     );

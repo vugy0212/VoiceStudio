@@ -83,10 +83,24 @@ class FirebaseHubService {
             .map((v) => v is Map ? (v['stringValue'] ?? '').toString() : '')
             .where((s) => s.isNotEmpty)
             .toList();
-        if (values.isNotEmpty) return values;
+        return values;
       }
     }
     return fallback;
+  }
+
+  static List<VoiceGroup> _voiceGroupsFromFields(Map<String, dynamic> fields) {
+    final rawJson = _strField(fields, 'voiceGroupsJson');
+    if (rawJson.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawJson) as List;
+        final list = decoded
+            .map((e) => VoiceGroup.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (list.isNotEmpty) return list;
+      } catch (_) {}
+    }
+    return List<VoiceGroup>.from(VoiceGroup.defaultGroups);
   }
 
   static AppUser _userFromFirestoreDoc(Map<String, dynamic> doc) {
@@ -105,6 +119,8 @@ class FirebaseHubService {
       lastUsageDate: _strField(fields, 'lastUsageDate', _todayIso()),
       sessionToken: _strField(fields, 'sessionToken', _generateSessionToken(uid, role)),
       createdAt: _strField(fields, 'createdAt', _todayIso()),
+      voiceGroupId: _strField(fields, 'voiceGroupId', ''),
+      customVoiceIds: _strListField(fields, 'customVoiceIds', const []),
     );
   }
 
@@ -121,6 +137,14 @@ class FirebaseHubService {
       'lastUsageDate': {'stringValue': user.lastUsageDate},
       'sessionToken': {'stringValue': user.sessionToken},
       'createdAt': {'stringValue': user.createdAt},
+      'voiceGroupId': {'stringValue': user.voiceGroupId},
+      'customVoiceIds': {
+        'arrayValue': {
+          'values': user.customVoiceIds
+              .map((id) => {'stringValue': id})
+              .toList(),
+        },
+      },
     };
     if (passwordHash != null) {
       map['passwordHash'] = {'stringValue': passwordHash};
@@ -132,6 +156,11 @@ class FirebaseHubService {
     final res = await _dio.get('/config/connection');
     final data = res.data as Map<String, dynamic>;
     final fields = (data['fields'] as Map<String, dynamic>?) ?? {};
+    final allowed = _strListField(
+      fields,
+      'allowedVoiceIds',
+      HubConnectionConfig.defaultAllowedVoiceIds,
+    );
     return HubConnectionConfig(
       remoteUrl: _strField(fields, 'remoteUrl'),
       localUrl: _strField(fields, 'localUrl'),
@@ -140,15 +169,13 @@ class FirebaseHubService {
       autoApproveNewUsers: _boolField(fields, 'autoApproveNewUsers', false),
       defaultDailyQuota: _intField(fields, 'defaultDailyQuota', 30),
       adminEmail: _strField(fields, 'adminEmail', AppConstants.adminOwnerEmail),
-      allowedVoiceIds: _strListField(
-        fields,
-        'allowedVoiceIds',
-        HubConnectionConfig.defaultAllowedVoiceIds,
-      ),
+      allowedVoiceIds: allowed.isEmpty ? HubConnectionConfig.defaultAllowedVoiceIds : allowed,
+      voiceGroups: _voiceGroupsFromFields(fields),
     );
   }
 
   Future<void> saveConnectionConfig(HubConnectionConfig config) async {
+    final groupsJson = jsonEncode(config.voiceGroups.map((g) => g.toJson()).toList());
     await _dio.patch(
       '/config/connection',
       data: {
@@ -167,6 +194,7 @@ class FirebaseHubService {
                   .toList(),
             },
           },
+          'voiceGroupsJson': {'stringValue': groupsJson},
         },
       },
     );
@@ -248,14 +276,20 @@ class FirebaseHubService {
     bool approved = isOwner || config.autoApproveNewUsers;
     int quota = isOwner ? 999999 : config.defaultDailyQuota;
     String assignedRole = isOwner ? 'admin' : 'user';
+    String assignedVoiceGroup = '';
+    List<String> assignedCustomVoices = const [];
 
     if (inviteCode != null && inviteCode.trim().isNotEmpty) {
       final cleanCode = inviteCode.trim().toUpperCase();
       final invite = await _consumeInviteCode(cleanCode);
       approved = true;
       quota = invite.dailyQuota;
-      if (!isOwner && invite.role == 'premium') {
-        assignedRole = 'premium';
+      if (!isOwner) {
+        if (invite.role == 'premium') {
+          assignedRole = 'premium';
+        }
+        assignedVoiceGroup = invite.voiceGroupId;
+        assignedCustomVoices = invite.customVoiceIds;
       }
     }
 
@@ -272,6 +306,8 @@ class FirebaseHubService {
       lastUsageDate: _todayIso(),
       sessionToken: _generateSessionToken(uid, assignedRole),
       createdAt: _todayIso(),
+      voiceGroupId: assignedVoiceGroup,
+      customVoiceIds: assignedCustomVoices,
     );
 
     await _dio.patch(
@@ -313,6 +349,8 @@ class FirebaseHubService {
       lastUsageDate: _todayIso(),
       sessionToken: _generateSessionToken(uid, assignedRole),
       createdAt: _todayIso(),
+      voiceGroupId: invite.voiceGroupId,
+      customVoiceIds: invite.customVoiceIds,
     );
 
     await _dio.patch(
@@ -335,6 +373,8 @@ class FirebaseHubService {
         code: _strField(fields, 'code', cleanCode),
         note: _strField(fields, 'note'),
         role: _strField(fields, 'role', 'user'),
+        voiceGroupId: _strField(fields, 'voiceGroupId', ''),
+        customVoiceIds: _strListField(fields, 'customVoiceIds', const []),
         dailyQuota: _intField(fields, 'dailyQuota', 30),
         maxUses: _intField(fields, 'maxUses', 1),
         usedCount: _intField(fields, 'usedCount', 0),
@@ -414,22 +454,34 @@ class FirebaseHubService {
     bool? blocked,
     int? dailyQuota,
     String? role,
+    String? voiceGroupId,
+    List<String>? customVoiceIds,
   }) async {
     final updated = user.copyWith(
       approved: approved,
       blocked: blocked,
       dailyQuota: dailyQuota,
       role: role,
+      voiceGroupId: voiceGroupId,
+      customVoiceIds: customVoiceIds,
     );
 
     await _dio.patch(
-      '/users/${user.uid}?updateMask.fieldPaths=approved&updateMask.fieldPaths=blocked&updateMask.fieldPaths=dailyQuota&updateMask.fieldPaths=role',
+      '/users/${user.uid}?updateMask.fieldPaths=approved&updateMask.fieldPaths=blocked&updateMask.fieldPaths=dailyQuota&updateMask.fieldPaths=role&updateMask.fieldPaths=voiceGroupId&updateMask.fieldPaths=customVoiceIds',
       data: {
         'fields': {
           'approved': {'booleanValue': updated.approved},
           'blocked': {'booleanValue': updated.blocked},
           'dailyQuota': {'integerValue': updated.dailyQuota.toString()},
           'role': {'stringValue': updated.role},
+          'voiceGroupId': {'stringValue': updated.voiceGroupId},
+          'customVoiceIds': {
+            'arrayValue': {
+              'values': updated.customVoiceIds
+                  .map((id) => {'stringValue': id})
+                  .toList(),
+            },
+          },
         },
       },
     );
@@ -450,6 +502,8 @@ class FirebaseHubService {
         code: _strField(fields, 'code'),
         note: _strField(fields, 'note'),
         role: _strField(fields, 'role', 'user'),
+        voiceGroupId: _strField(fields, 'voiceGroupId', ''),
+        customVoiceIds: _strListField(fields, 'customVoiceIds', const []),
         dailyQuota: _intField(fields, 'dailyQuota', 30),
         maxUses: _intField(fields, 'maxUses', 1),
         usedCount: _intField(fields, 'usedCount', 0),
@@ -461,6 +515,8 @@ class FirebaseHubService {
   Future<InviteCodeItem> createInviteCode({
     required String note,
     String role = 'user',
+    String voiceGroupId = '',
+    List<String> customVoiceIds = const [],
     int dailyQuota = 30,
     int maxUses = 5,
   }) async {
@@ -472,8 +528,12 @@ class FirebaseHubService {
 
     final item = InviteCodeItem(
       code: code,
-      note: note.trim().isEmpty ? (role == 'premium' ? 'Premium pozivnica' : 'Demo pozivnica') : note.trim(),
+      note: note.trim().isEmpty
+          ? (role == 'premium' ? 'Premium pozivnica' : 'Demo pozivnica')
+          : note.trim(),
       role: role,
+      voiceGroupId: voiceGroupId,
+      customVoiceIds: customVoiceIds,
       dailyQuota: dailyQuota,
       maxUses: maxUses,
       usedCount: 0,
@@ -487,6 +547,14 @@ class FirebaseHubService {
           'code': {'stringValue': item.code},
           'note': {'stringValue': item.note},
           'role': {'stringValue': item.role},
+          'voiceGroupId': {'stringValue': item.voiceGroupId},
+          'customVoiceIds': {
+            'arrayValue': {
+              'values': item.customVoiceIds
+                  .map((id) => {'stringValue': id})
+                  .toList(),
+            },
+          },
           'dailyQuota': {'integerValue': item.dailyQuota.toString()},
           'maxUses': {'integerValue': item.maxUses.toString()},
           'usedCount': {'integerValue': '0'},

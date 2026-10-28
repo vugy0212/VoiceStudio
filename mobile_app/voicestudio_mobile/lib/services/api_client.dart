@@ -131,6 +131,9 @@ class ApiClient {
             options.headers['X-VS-User-Role'] = user.role;
             options.headers['X-VS-User-Email'] = user.email;
             options.headers['X-VS-Session-Token'] = user.sessionToken;
+            if (!user.isAdmin && user.customVoiceIds.isNotEmpty) {
+              options.headers['X-VS-Allowed-Voices'] = user.customVoiceIds.join(',');
+            }
           }
 
           handler.next(options);
@@ -703,6 +706,61 @@ class ApiClient {
       return [];
     } catch (e) {
       throw Exception('Greška povijesti: $e');
+    }
+  }
+
+  Future<VoiceProfile> updateProfile({
+    required String profileId,
+    String? name,
+    String? language,
+    String? refText,
+    String? instruct,
+  }) async {
+    try {
+      final payload = <String, dynamic>{};
+      if (name != null && name.trim().isNotEmpty) {
+        payload['name'] = name.trim();
+      }
+      if (language != null && language.trim().isNotEmpty) {
+        payload['language'] = language.trim();
+      }
+      if (refText != null) {
+        payload['ref_text'] = refText;
+      }
+      if (instruct != null) {
+        payload['instruct'] = instruct;
+      }
+
+      final response = await _dio.put(
+        '$baseUrl/profiles/$profileId',
+        data: payload,
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return VoiceProfile.fromJson(response.data as Map<String, dynamic>);
+      }
+      throw Exception('Poslužitelj vratio ${response.statusCode}: ${response.data}');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403) {
+        throw Exception('Nemate ovlasti za uređivanje administratorskog glasa.');
+      }
+      throw Exception('Greška uređivanja glasa: ${e.message ?? e}');
+    } catch (e) {
+      throw Exception('Greška uređivanja glasa: $e');
+    }
+  }
+
+  Future<void> syncPublicProfilesToGateway(List<String> profileIds) async {
+    try {
+      await _dio.post(
+        '$baseUrl/gateway/public-profiles',
+        data: {'profile_ids': profileIds},
+        options: Options(
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+        ),
+      );
+    } catch (_) {
+      // Optional sync with gateway
     }
   }
 

@@ -104,7 +104,7 @@ function saveMultiUserState() {
   }
 }
 
-function isProfileVisibleToUser(profile, userId, userRole) {
+function isProfileVisibleToUser(profile, userId, userRole, customAllowedVoiceIds = null) {
   if (!profile) return false;
   if (userRole === "admin") return true;
 
@@ -117,7 +117,12 @@ function isProfileVisibleToUser(profile, userId, userRole) {
   // Another non-admin user's private cloned voice is hidden from other users
   if (owner && owner !== userId) return false;
 
-  // Premium users see ALL admin/shared voices!
+  // If the user has an explicit per-user or per-group voice selection assigned by Admin:
+  if (Array.isArray(customAllowedVoiceIds) && customAllowedVoiceIds.length > 0) {
+    return customAllowedVoiceIds.includes(pid);
+  }
+
+  // Premium users (without a restricted custom list) see ALL admin/shared voices!
   if (userRole === "premium") return true;
 
   // Standard ('user' / demo) users see only the allowed public/demo voices
@@ -309,6 +314,10 @@ const server = Bun.serve({
     const url = new URL(req.url);
     const userId = req.headers.get("x-vs-user-id")?.trim() || "";
     const userRole = req.headers.get("x-vs-user-role")?.trim() || "admin"; // 'admin' | 'premium' | 'user'
+    const allowedHeader = req.headers.get("x-vs-allowed-voices")?.trim() || "";
+    const customAllowedVoiceIds = allowedHeader
+      ? allowedHeader.split(",").map((s) => s.trim()).filter(Boolean)
+      : null;
     const isAdmin = userRole === "admin";
     const isNonAdminUser = !isAdmin && userId.length > 0;
 
@@ -375,14 +384,14 @@ const server = Bun.serve({
       return Response.json({ success: true, status: "sleeping" });
     }
 
-    // 2. Multi-User Authorization Check for Profile Deletion (Both 'user' and 'premium' can only delete their OWN cloned voices)
-    if (req.method === "DELETE" && url.pathname.startsWith("/profiles/")) {
+    // 2. Multi-User Authorization Check for Profile Deletion & Editing (Non-admins can only edit/delete their OWN cloned voices)
+    if ((req.method === "DELETE" || req.method === "PUT") && url.pathname.startsWith("/profiles/")) {
       const profileId = decodeURIComponent(url.pathname.replace("/profiles/", "").split("/")[0]);
       if (isNonAdminUser) {
         const owner = multiUserState.profileOwners[profileId];
         if (!owner || owner !== userId) {
           return Response.json(
-            { detail: "Nemate ovlasti za brisanje administratorskog ili tudjeg glasa." },
+            { detail: "Nemate ovlasti za izmjenu ili brisanje administratorskog glasa." },
             { status: 403 }
           );
         }
@@ -437,11 +446,13 @@ const server = Bun.serve({
         : await executeProxyFetch();
 
       // --- Multi-User Isolation Interception ---
-      // A) Filter GET /profiles for non-admin users ('user' vs 'premium')
+      // A) Filter GET /profiles for non-admin users ('user' vs 'premium' vs custom group/selection)
       if (req.method === "GET" && url.pathname === "/profiles" && resp.status === 200 && isNonAdminUser) {
         const list = await resp.json();
         if (Array.isArray(list)) {
-          const filtered = list.filter((p) => isProfileVisibleToUser(p, userId, userRole));
+          const filtered = list.filter((p) =>
+            isProfileVisibleToUser(p, userId, userRole, customAllowedVoiceIds)
+          );
           return Response.json(filtered);
         }
       }
