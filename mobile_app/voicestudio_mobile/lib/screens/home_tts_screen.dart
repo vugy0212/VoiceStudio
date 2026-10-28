@@ -15,6 +15,7 @@ import 'dialogue_studio_screen.dart';
 import 'history_screen.dart';
 import 'library_screen.dart';
 import 'settings_screen.dart';
+import 'admin_panel_screen.dart';
 
 class HomeTtsScreen extends StatefulWidget {
   const HomeTtsScreen({super.key});
@@ -64,7 +65,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
   }
 
   Future<void> _toggleGatewayPower(AppState state) async {
-    if (!state.isConnected) return;
+    if (!state.isConnected || !state.isAdmin) return;
     HapticFeedback.mediumImpact();
     if (state.isBackendSleeping) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -188,8 +189,8 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final user = state.currentUser;
 
-    // Sync if draftText was updated externally (e.g. from HistoryScreen "Koristi tekst")
     if (state.draftText != _textController.text) {
       _textController.value = TextEditingValue(
         text: state.draftText,
@@ -231,7 +232,16 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
           ],
         ),
         actions: [
-          // Saved Offline Library Button with Badge
+          if (state.isAdmin)
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings_rounded, size: 21, color: AppTheme.primaryNeon),
+              tooltip: 'Admin Panel',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
+                );
+              },
+            ),
           Stack(
             alignment: Alignment.topRight,
             children: [
@@ -264,7 +274,6 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                 ),
             ],
           ),
-          // History Button
           IconButton(
             icon: const Icon(Icons.history_rounded, size: 21, color: AppTheme.textSecondary),
             tooltip: 'Povijest generiranja',
@@ -274,10 +283,9 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
               );
             },
           ),
-          // Settings Button
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 21, color: AppTheme.textSecondary),
-            tooltip: 'Postavke mreže',
+            tooltip: 'Moj profil i postavke',
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -288,29 +296,69 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => state.testConnectionAndRefresh(forceWake: false),
+        onRefresh: () => state.refreshUserAndSyncConfig(),
         color: AppTheme.primary,
         backgroundColor: AppTheme.surfaceElevated,
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: [
-            // Connection & Standby Badge (Tap -> Settings, Long Press -> Sleep/Wake GPU)
+            // User Quota / Queue Indicator + Connection Badge
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: ConnectionBadge(
-                  isConnected: state.isConnected,
-                  isChecking: state.isCheckingConnection,
-                  isUsingLocal: state.isUsingLocalUrl,
-                  backendStatus: state.backendStatus,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                    );
-                  },
-                  onLongPress: () => _toggleGatewayPower(state),
-                ),
+              child: Row(
+                children: [
+                  if (user != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceElevated,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            state.isAdmin
+                                ? Icons.shield_rounded
+                                : (state.isPremium
+                                    ? Icons.workspace_premium_rounded
+                                    : Icons.bolt_rounded),
+                            size: 13,
+                            color: state.isAdmin
+                                ? AppTheme.primaryNeon
+                                : (state.isPremium
+                                    ? Colors.amberAccent
+                                    : AppTheme.accentCyan),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            state.isAdmin
+                                ? 'Admin (${user.displayName})'
+                                : '${state.isPremium ? "⭐ Premium" : "Demo"} • Kvota: ${user.remainingQuota}/${user.dailyQuota}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const Spacer(),
+                  ConnectionBadge(
+                    isConnected: state.isConnected,
+                    isChecking: state.isCheckingConnection,
+                    isUsingLocal: state.isUsingLocalUrl,
+                    backendStatus: state.backendStatus,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
+                    },
+                    onLongPress: state.isAdmin ? () => _toggleGatewayPower(state) : null,
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 10),
@@ -401,7 +449,6 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  // Speechify Reader Mode Button
                   OutlinedButton(
                     onPressed: state.isGenerating
                         ? null
@@ -434,8 +481,6 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                     ),
                   ),
                   const SizedBox(width: 10),
-
-                  // Synthesize CTA Button
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -473,7 +518,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                                   const SizedBox(
                                     width: 18,
                                     height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+                                  child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
                                   ),
                                   const SizedBox(width: 10),
                                   Flexible(
@@ -510,8 +555,6 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                       ),
                     ),
                   ),
-
-                  // Cancel button during active synthesis
                   if (state.isGenerating) ...[
                     const SizedBox(width: 8),
                     IconButton.filled(
@@ -537,7 +580,7 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
             ),
             const SizedBox(height: 22),
 
-            // 5. Neon Audio Player (Shows generated speech)
+            // 5. Neon Audio Player
             if (state.lastGeneration != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),

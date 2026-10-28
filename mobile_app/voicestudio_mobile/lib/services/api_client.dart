@@ -83,11 +83,15 @@ class GatewayInfo {
   final bool reachable;
   final String backendStatus; // 'RUNNING', 'SLEEPING', 'STARTING', 'DIRECT', 'OFFLINE'
   final int idleSecondsRemaining;
+  final int queueLength;
+  final int activeGpuJobs;
 
   const GatewayInfo({
     required this.reachable,
     required this.backendStatus,
     this.idleSecondsRemaining = 0,
+    this.queueLength = 0,
+    this.activeGpuJobs = 0,
   });
 }
 
@@ -121,6 +125,14 @@ class ApiClient {
             options.headers['CF-Access-Client-Secret'] = cfSecret;
           }
 
+          final user = _storage.getCurrentUser();
+          if (user != null) {
+            options.headers['X-VS-User-Id'] = user.uid;
+            options.headers['X-VS-User-Role'] = user.role;
+            options.headers['X-VS-User-Email'] = user.email;
+            options.headers['X-VS-Session-Token'] = user.sessionToken;
+          }
+
           handler.next(options);
         },
       ),
@@ -136,16 +148,16 @@ class ApiClient {
   String get remoteBaseUrl {
     String url = _storage.getRemoteUrl().trim();
     if (url.endsWith('/')) url = url.substring(0, url.length - 1);
-    return url.isEmpty ? 'https://studiovoice.trustshome.org' : url;
+    return url;
   }
 
   String get connectionMode => _storage.getConnectionMode();
 
   String get baseUrl {
-    if (_activeBaseUrl != null) return _activeBaseUrl!;
+    if (_activeBaseUrl != null && _activeBaseUrl!.isNotEmpty) return _activeBaseUrl!;
     if (connectionMode == 'local') return localBaseUrl;
-    if (connectionMode == 'remote') return remoteBaseUrl;
-    return localBaseUrl;
+    if (connectionMode == 'remote') return remoteBaseUrl.isNotEmpty ? remoteBaseUrl : localBaseUrl;
+    return remoteBaseUrl.isNotEmpty ? remoteBaseUrl : localBaseUrl;
   }
 
   String get activeBaseUrl => baseUrl;
@@ -156,8 +168,11 @@ class ApiClient {
     _activeBaseUrl = null;
   }
 
-  /// Non-waking lightweight probe using /gateway/status first, fallback to /system/info or /profiles
+  /// Non-waking lightweight probe using /gateway/status first, fallback to /profiles
   Future<GatewayInfo> probeUrl(String targetBaseUrl, {Duration timeout = const Duration(milliseconds: 1500)}) async {
+    if (targetBaseUrl.trim().isEmpty) {
+      return const GatewayInfo(reachable: false, backendStatus: 'OFFLINE');
+    }
     try {
       final res = await _dio.get(
         '$targetBaseUrl/gateway/status',
@@ -169,21 +184,24 @@ class ApiClient {
       );
 
       if (_isCloudflareHtml(res)) {
-        throw Exception('Cloudflare Access login potreban (302). Unesite CF Service Token u Postavkama.');
+        throw Exception('Cloudflare Access autentifikacija nije prošla.');
       }
 
       if (res.statusCode == 200 && res.data is Map) {
         final map = res.data as Map;
         final status = map['status']?.toString() ?? 'RUNNING';
         final idleRem = (map['idle_seconds_remaining'] as num?)?.toInt() ?? 0;
+        final qLen = (map['queue_length'] as num?)?.toInt() ?? 0;
+        final activeJobs = (map['active_gpu_jobs'] as num?)?.toInt() ?? 0;
         return GatewayInfo(
           reachable: true,
           backendStatus: status,
           idleSecondsRemaining: idleRem,
+          queueLength: qLen,
+          activeGpuJobs: activeJobs,
         );
       }
 
-      // If /gateway/status returned 404, server may be running directly without gateway
       if (res.statusCode == 404) {
         final resDirect = await _dio.get(
           '$targetBaseUrl/profiles',
@@ -200,9 +218,9 @@ class ApiClient {
     } on DioException catch (e) {
       final status = e.response?.statusCode;
       if (status == 302) {
-        throw Exception('Cloudflare odbio zahtjev (302 PIN redirect). Dodajte CF Service Token.');
+        throw Exception('Cloudflare Access odbio zahtjev (302).');
       } else if (status == 502) {
-        throw Exception('Cloudflare tunel radi, ali VoiceStudio servis nije pokrenut na PC-u (502).');
+        throw Exception('Poslužitelj trenutno nije pokrenut (502).');
       }
     } catch (e) {
       if (e.toString().contains('Cloudflare')) rethrow;
@@ -223,26 +241,26 @@ class ApiClient {
     }
 
     // Auto mode: probe configured local URL without waking sleeping backend
-    try {
-      final info = await probeUrl(localBaseUrl, timeout: const Duration(milliseconds: 1200));
-      if (info.reachable) {
-        _activeBaseUrl = localBaseUrl;
-        return _activeBaseUrl!;
-      }
-    } catch (_) {}
-
-    // If localBaseUrl wasn't 127.0.0.1, also check USB reverse (127.0.0.1:3900)
-    if (!localBaseUrl.contains('127.0.0.1')) {
+    if (_storage.getLocalUrl().trim().isNotEmpty) {
       try {
-        final infoUsb = await probeUrl('http://127.0.0.1:3900', timeout: const Duration(milliseconds: 1000));
-        if (infoUsb.reachable) {
-          _activeBaseUrl = 'http://127.0.0.1:3900';
+        final info = await probeUrl(localBaseUrl, timeout: const Duration(milliseconds: 1200));
+        if (info.reachable) {
+          _activeBaseUrl = localBaseUrl;
           return _activeBaseUrl!;
         }
       } catch (_) {}
     }
 
-    _activeBaseUrl = remoteBaseUrl;
+    // Also check USB reverse (127.0.0.1:3900)
+    try {
+      final infoUsb = await probeUrl('http://127.0.0.1:3900', timeout: const Duration(milliseconds: 900));
+      if (infoUsb.reachable) {
+        _activeBaseUrl = 'http://127.0.0.1:3900';
+        return _activeBaseUrl!;
+      }
+    } catch (_) {}
+
+    _activeBaseUrl = remoteBaseUrl.isNotEmpty ? remoteBaseUrl : localBaseUrl;
     return _activeBaseUrl!;
   }
 
@@ -261,6 +279,12 @@ class ApiClient {
     final cfSecret = _storage.getCfClientSecret();
     if (cfId.isNotEmpty) headers['CF-Access-Client-Id'] = cfId;
     if (cfSecret.isNotEmpty) headers['CF-Access-Client-Secret'] = cfSecret;
+    final user = _storage.getCurrentUser();
+    if (user != null) {
+      headers['X-VS-User-Id'] = user.uid;
+      headers['X-VS-User-Role'] = user.role;
+      headers['X-VS-Session-Token'] = user.sessionToken;
+    }
     return headers;
   }
 
@@ -272,7 +296,6 @@ class ApiClient {
     return false;
   }
 
-  /// Check server connectivity & gateway standby state without unnecessarily waking GPU
   Future<GatewayInfo> checkGatewayConnection() async {
     await resolveActiveBaseUrl();
     final timeout = isUsingLocalUrl
@@ -316,7 +339,6 @@ class ApiClient {
     }
   }
 
-  /// Test both endpoints for Settings diagnostics (via non-waking /gateway/status first)
   Future<Map<String, dynamic>> testEndpoints() async {
     bool localOk = false;
     int? localPing;
@@ -328,7 +350,6 @@ class ApiClient {
     String? remoteError;
     String? remoteBackendState;
 
-    // Test Local
     try {
       final sw = Stopwatch()..start();
       final info = await probeUrl(localBaseUrl, timeout: const Duration(seconds: 2));
@@ -344,7 +365,6 @@ class ApiClient {
       localError = e.toString().replaceAll('Exception: ', '');
     }
 
-    // Test Remote
     try {
       final sw = Stopwatch()..start();
       final info = await probeUrl(remoteBaseUrl, timeout: const Duration(seconds: 5));
@@ -376,12 +396,11 @@ class ApiClient {
     };
   }
 
-  /// Fetch all voice profiles
   Future<List<VoiceProfile>> getProfiles() async {
     try {
       final response = await _dio.get('$baseUrl/profiles');
       if (_isCloudflareHtml(response)) {
-        throw Exception('Cloudflare Access login potreban. Postavite CF Service Token u Postavkama.');
+        throw Exception('Cloudflare Access prijava potrebna.');
       }
       if (response.statusCode == 200 && response.data is List) {
         final List list = response.data;
@@ -398,7 +417,6 @@ class ApiClient {
     }
   }
 
-  /// Streaming speech generation with low-latency chunk delivery and cancellation
   Future<GenerateResult> generateSpeechStream({
     required String text,
     String? profileId,
@@ -537,8 +555,8 @@ class ApiClient {
       if (CancelToken.isCancel(e)) {
         throw Exception('Generiranje prekinuto.');
       }
-      if (e.response?.statusCode == 302 || e.message?.contains('302') == true) {
-        throw Exception('Cloudflare blokirao zahtjev (302 redirect). Dodajte CF Service Token u Postavkama.');
+      if (e.response?.statusCode == 429) {
+        throw Exception('Poslužitelj je trenutačno preopterećen ili ste dosegnuli dnevni limit.');
       }
       throw Exception('Greška generiranja (stream): ${e.message ?? e}');
     } catch (e) {
@@ -546,7 +564,6 @@ class ApiClient {
     }
   }
 
-  /// Generate speech via POST /generate (batch mode)
   Future<GenerateResult> generateSpeech({
     required String text,
     String? profileId,
@@ -620,8 +637,8 @@ class ApiClient {
       if (CancelToken.isCancel(e)) {
         throw Exception('Generiranje prekinuto.');
       }
-      if (e.response?.statusCode == 302 || e.message?.contains('302') == true) {
-        throw Exception('Cloudflare blokirao zahtjev (302 redirect). Dodajte CF Service Token u Postavkama.');
+      if (e.response?.statusCode == 429) {
+        throw Exception('Poslužitelj je trenutačno preopterećen ili ste dosegnuli dnevni limit.');
       }
       throw Exception('Greška generiranja: ${e.message ?? e}');
     } catch (e) {
@@ -629,7 +646,6 @@ class ApiClient {
     }
   }
 
-  /// Download an audio file from server history to local temp file
   Future<File> downloadAudioFile(String filename) async {
     final url = getAudioFileUrl(filename);
     final response = await _dio.get<List<int>>(
@@ -646,7 +662,6 @@ class ApiClient {
     throw Exception('Preuzimanje audio datoteke nije uspjelo.');
   }
 
-  /// Create a new voice profile via POST /profiles
   Future<VoiceProfile> createProfile({
     required String name,
     required String audioPath,
@@ -678,7 +693,6 @@ class ApiClient {
     }
   }
 
-  /// Get generation history via GET /history
   Future<List<GenerationHistory>> getHistory() async {
     try {
       final response = await _dio.get('$baseUrl/history');
@@ -692,17 +706,20 @@ class ApiClient {
     }
   }
 
-  /// Delete a voice profile via DELETE /profiles/{profile_id}
   Future<bool> deleteProfile(String profileId) async {
     try {
       final response = await _dio.delete('$baseUrl/profiles/$profileId');
       return response.statusCode == 200;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403) {
+        throw Exception('Nemate ovlasti za brisanje zajedničkog (javnog) glasa.');
+      }
+      throw Exception('Greška brisanja profila: ${e.message ?? e}');
     } catch (e) {
       throw Exception('Greška brisanja profila: $e');
     }
   }
 
-  /// Speech-to-Speech Voice Conversion via POST /convert
   Future<ConvertResult> convertSpeech({
     required File sourceAudio,
     required String profileId,
@@ -768,7 +785,6 @@ class ApiClient {
     }
   }
 
-  /// AI Vocal Isolation / Denoise via POST /clean-audio (Demucs)
   Future<File> cleanAudio(File rawAudio) async {
     try {
       final ext = rawAudio.path.split('.').last.toLowerCase();
@@ -800,7 +816,6 @@ class ApiClient {
     }
   }
 
-  /// Parse a free-text voice description into structured vd_states + instruct via POST /design/describe
   Future<Map<String, dynamic>> describeVoice(String description) async {
     try {
       final response = await _dio.post(
@@ -816,7 +831,6 @@ class ApiClient {
     }
   }
 
-  /// Create a designed voice profile without reference audio via POST /profiles (kind='design')
   Future<VoiceProfile> createDesignedProfile({
     required String name,
     required Map<String, dynamic> vdStates,
@@ -849,7 +863,6 @@ class ApiClient {
     }
   }
 
-  /// Browse voice archetypes catalog via GET /archetypes
   Future<List<ArchetypeItem>> getArchetypes({
     String? query,
     String? gender,
@@ -885,7 +898,6 @@ class ApiClient {
     return '$baseUrl/archetypes/$archetypeId/preview';
   }
 
-  /// Materialize an archetype into a reusable voice profile via POST /archetypes/{id}/use
   Future<VoiceProfile> useArchetype(String archetypeId, {String? customName}) async {
     try {
       final response = await _dio.post(

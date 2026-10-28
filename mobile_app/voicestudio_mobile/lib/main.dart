@@ -7,12 +7,12 @@ import 'services/api_client.dart';
 import 'services/audio_service.dart';
 import 'services/recorder_service.dart';
 import 'state/app_state.dart';
+import 'screens/auth_screen.dart';
 import 'screens/home_tts_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Set system navigation & status bar transparent / dark
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -22,7 +22,6 @@ void main() async {
     ),
   );
 
-  // Initialize services
   final storage = await StorageService.init();
   final api = ApiClient(storage);
   final audio = AudioService();
@@ -50,11 +49,13 @@ class VoiceStudioApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isApproved = context.select<AppState, bool>((s) => s.isApprovedUser);
+
     return MaterialApp(
       title: 'VoiceStudio',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const HomeTtsScreen(),
+      home: isApproved ? const HomeTtsScreen() : const AuthScreen(),
     );
   }
 }

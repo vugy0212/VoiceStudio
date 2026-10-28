@@ -1,9 +1,15 @@
 class AppConstants {
-  static const String defaultServerUrl = 'http://127.0.0.1:3900';
-  static const String defaultLocalUrl = 'http://192.168.50.175:3900';
-  static const String defaultRemoteUrl = 'https://studiovoice.trustshome.org';
-  static const String defaultCfClientId = '0f22a8ec4a1a9f59ad9ee99b79229b11.access';
-  static const String defaultCfClientSecret = 'cfast_GRtedQFtqybBNwPFPpC6HtpUQpe2L3TnU0LN5Qrr0a1d1667';
+  // Firebase Hub Configuration (Cloud Firestore & Auth)
+  static const String firebaseProjectId = 'voicestudio-mobile-hub';
+  static const String firebaseApiKey = 'AIzaSyC6kh1xub67idTbzx93SeroPYZmV_y1jiM';
+  static const String adminOwnerEmail = 'vugy0212@gmail.com';
+
+  // Default empty connection values (fetched dynamically from Firebase Hub after user approval!)
+  static const String defaultServerUrl = '';
+  static const String defaultLocalUrl = '';
+  static const String defaultRemoteUrl = '';
+  static const String defaultCfClientId = '';
+  static const String defaultCfClientSecret = '';
 
   static const String prefServerUrl = 'vs_server_url';
   static const String prefLocalUrl = 'vs_local_url';
@@ -21,6 +27,7 @@ class AppConstants {
   static const String prefStreamingEnabled = 'vs_streaming_enabled';
   static const String prefCachedProfiles = 'vs_cached_profiles';
   static const String prefDraftText = 'vs_draft_text';
+  static const String prefCurrentUserJson = 'vs_current_user_json';
 
   static const List<double> availableSpeeds = [0.8, 1.0, 1.25, 1.5, 2.0];
   static const List<String> availableLanguages = ['Auto', 'Croatian', 'English', 'Serbian', 'German', 'Italian', 'Spanish'];

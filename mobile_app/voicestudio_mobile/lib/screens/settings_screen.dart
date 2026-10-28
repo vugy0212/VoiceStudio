@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../state/app_state.dart';
+import 'admin_panel_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,7 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _connectionMode;
   late bool _streamingEnabled;
   bool _obscureSecret = true;
-  bool _showTutorial = false;
+  bool _syncToFirebase = true;
   Map<String, dynamic>? _testResults;
   bool _isTesting = false;
 
@@ -45,6 +46,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveSettings() async {
     final state = context.read<AppState>();
+    if (!state.isAdmin) {
+      await state.setStreamingEnabled(_streamingEnabled);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Postavke reprodukcije spremljene!'),
+            backgroundColor: AppTheme.accentGreen,
+          ),
+        );
+      }
+      return;
+    }
+
     await state.updateConnectionSettings(
       newLocalUrl: _localController.text.trim(),
       newRemoteUrl: _remoteController.text.trim(),
@@ -52,6 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       newCfClientId: _cfIdController.text.trim(),
       newCfClientSecret: _cfSecretController.text.trim(),
       newStreamingEnabled: _streamingEnabled,
+      syncToFirebaseHub: _syncToFirebase,
     );
 
     if (mounted) {
@@ -59,8 +74,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(
           content: Text(
             state.isConnected
-                ? 'Postavke spremljene! Aktivna veza: ${state.isUsingLocalUrl ? "Lokalno (Wi-Fi/USB)" : "Cloudflare Tunel"}'
-                : 'Spremljeno. Poslužitelj nije dostupan (${state.errorMessage ?? "Provjerite adrese"})',
+                ? (_syncToFirebase
+                    ? 'Spremljeno lokalno i sinkronizirano u Firebase za sve korisnike!'
+                    : 'Postavke spremljene!')
+                : 'Spremljeno. Poslužitelj trenutno nije dostupan.',
           ),
           backgroundColor: state.isConnected ? AppTheme.accentGreen : AppTheme.primary,
         ),
@@ -97,10 +114,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final user = state.currentUser;
+    final isAdmin = state.isAdmin;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mreža i Povezivanje'),
+        title: Text(isAdmin ? 'Postavke & Admin Sustav' : 'Moj Profil i Postavke'),
         actions: [
           IconButton(
             icon: state.isCheckingConnection || _isTesting
@@ -118,7 +137,160 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // 1. Connection & Gateway GPU Power Card
+          // 1. User Account & Quota Card (Visible to all users)
+          if (user != null)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceElevated,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isAdmin
+                      ? AppTheme.primaryNeon.withValues(alpha: 0.45)
+                      : AppTheme.accentCyan.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 21,
+                        backgroundColor: (isAdmin ? AppTheme.primaryNeon : AppTheme.accentCyan)
+                            .withValues(alpha: 0.15),
+                        child: Icon(
+                          isAdmin ? Icons.admin_panel_settings_rounded : Icons.person_rounded,
+                          color: isAdmin ? AppTheme.primaryNeon : AppTheme.accentCyan,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    user.displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppTheme.textPrimary,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: (isAdmin
+                                            ? AppTheme.primaryNeon
+                                            : (state.isPremium
+                                                ? Colors.amberAccent
+                                                : AppTheme.accentGreen))
+                                        .withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Text(
+                                    isAdmin
+                                        ? 'ADMIN'
+                                        : (state.isPremium ? '⭐ PREMIUM (SVI GLASOVI)' : 'DEMO (4 GLASA)'),
+                                    style: TextStyle(
+                                      color: isAdmin
+                                          ? AppTheme.primaryNeon
+                                          : (state.isPremium
+                                              ? Colors.amberAccent
+                                              : AppTheme.accentGreen),
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              user.email,
+                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
+                        tooltip: 'Odjava iz računa',
+                        onPressed: () async {
+                          final navigator = Navigator.of(context);
+                          await state.logout();
+                          if (mounted) navigator.popUntil((route) => route.isFirst);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  // Daily Quota Progress Bar
+                  if (!isAdmin) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Dnevna kvota generiranja:',
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                        ),
+                        Text(
+                          '${user.effectiveUsedToday} / ${user.dailyQuota} iskorišteno (preostalo: ${user.remainingQuota})',
+                          style: const TextStyle(
+                            color: AppTheme.accentCyan,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: user.dailyQuota > 0
+                            ? (user.effectiveUsedToday / user.dailyQuota).clamp(0.0, 1.0)
+                            : 0.0,
+                        minHeight: 7,
+                        backgroundColor: AppTheme.surfaceHighlight,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          user.remainingQuota <= 3 ? Colors.amberAccent : AppTheme.accentCyan,
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
+                          );
+                        },
+                        icon: const Icon(Icons.people_alt_rounded, size: 19),
+                        label: const Text('Otvori Admin Panel (Korisnici, Kvote i Pozivnice)'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryNeon,
+                          foregroundColor: const Color(0xFF0A0D14),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          const SizedBox(height: 18),
+
+          // 2. Server Connection Status Card (Sanitized for regular users; full info for Admin)
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -148,65 +320,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: state.isConnected
                           ? (state.isBackendSleeping ? AppTheme.accentCyan : AppTheme.accentGreen)
                           : AppTheme.primary,
-                      size: 30,
+                      size: 28,
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: [
-                              Text(
-                                state.isConnected
-                                    ? (state.isBackendSleeping ? 'Povezano (Standby 0% GPU)' : 'Povezano (GPU Aktivan)')
-                                    : 'Nije povezano',
-                                style: TextStyle(
-                                  color: state.isConnected
-                                      ? (state.isBackendSleeping ? AppTheme.accentCyan : AppTheme.accentGreen)
-                                      : AppTheme.primary,
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              if (state.isConnected)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: state.isUsingLocalUrl
-                                        ? AppTheme.accentCyan.withValues(alpha: 0.2)
-                                        : AppTheme.accentAmber.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    state.isUsingLocalUrl ? 'LOKALNO' : 'CLOUDFLARE',
-                                    style: TextStyle(
-                                      color: state.isUsingLocalUrl ? AppTheme.accentCyan : AppTheme.accentAmber,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                            ],
+                          Text(
+                            state.isConnected
+                                ? (state.isBackendSleeping
+                                    ? 'VoiceStudio Cloud spreman (Auto-Wake)'
+                                    : 'VoiceStudio Cloud aktivan')
+                                : 'Poslužitelj trenutno nije dostupan',
+                            style: TextStyle(
+                              color: state.isConnected
+                                  ? (state.isBackendSleeping ? AppTheme.accentCyan : AppTheme.accentGreen)
+                                  : AppTheme.primary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            state.isConnected
-                                ? 'Aktivna adresa: ${state.activeBaseUrl}'
-                                : (state.errorMessage ?? 'Provjerite je li VoiceStudio servis pokrenut'),
+                            isAdmin && state.isConnected
+                                ? 'Aktivna ruta: ${state.activeBaseUrl} • Red čekanja: ${state.queueLength}'
+                                : (state.isConnected
+                                    ? (state.queueLength > 0
+                                        ? 'Trenutačno u redu čekanja na poslužitelju: ${state.queueLength}'
+                                        : 'Svi servisi sinteze i kloniranja su dostupni')
+                                    : 'Provjerite internetsku vezu ili pokušajte ponovno'),
                             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, color: AppTheme.accentCyan, size: 20),
+                      tooltip: 'Osvježi vezu',
+                      onPressed: state.isCheckingConnection
+                          ? null
+                          : () => state.refreshUserAndSyncConfig(),
+                    ),
                   ],
                 ),
-                if (state.isConnected && state.backendStatus != 'DIRECT') ...[
+                // GPU Wake/Sleep button ONLY visible to Admin!
+                if (isAdmin && state.isConnected && state.backendStatus != 'DIRECT') ...[
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
@@ -226,8 +385,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       label: Text(
                         state.isBackendSleeping
-                            ? 'Probudi GPU unaprijed (Wake)'
-                            : 'Uspavaj GPU odmah (Oslobodi VRAM)',
+                            ? 'Probudi GPU unaprijed (Admin Wake)'
+                            : 'Uspavaj GPU odmah (Admin Sleep)',
                         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                       ),
                       style: OutlinedButton.styleFrom(
@@ -244,241 +403,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // 2. Connection Mode (P1 Auto Network Fallback)
-          const Text(
-            'NAČIN POVEZIVANJA (AUTO-FALLBACK)',
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceElevated,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: Row(
-              children: [
-                _buildModeTab('auto', '⚡ Automatski', 'Lokalno pa CF'),
-                _buildModeTab('local', '🏠 Lokalno', 'Samo Wi-Fi/USB'),
-                _buildModeTab('remote', '☁️ Cloudflare', 'Samo udaljeno'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _connectionMode == 'auto'
-                ? '⚡ Automatski provjerava brzu kućnu mrežu/USB bez buđenja GPU-a, a izvan kuće prebacuje na Cloudflare tunel.'
-                : _connectionMode == 'local'
-                    ? '🏠 Koristi samo lokalnu mrežu (Wi-Fi ili USB kabel).'
-                    : '☁️ Koristi isključivo Cloudflare Zero Trust tunel.',
-            style: const TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
-          ),
-          const SizedBox(height: 24),
-
-          // 3. Local URL configuration
-          const Text(
-            '1. LOKALNA ADRESA (WI-FI / USB)',
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              ActionChip(
-                avatar: const Icon(Icons.usb_rounded, size: 15, color: AppTheme.accentCyan),
-                label: const Text('USB (127.0.0.1:3900)', style: TextStyle(fontSize: 11.5, color: AppTheme.textPrimary)),
-                backgroundColor: AppTheme.surfaceElevated,
-                side: const BorderSide(color: AppTheme.border),
-                onPressed: () {
-                  setState(() => _localController.text = 'http://127.0.0.1:3900');
-                },
-              ),
-              ActionChip(
-                avatar: const Icon(Icons.wifi_rounded, size: 15, color: AppTheme.accentGreen),
-                label: const Text('Wi-Fi (192.168.50.175)', style: TextStyle(fontSize: 11.5, color: AppTheme.textPrimary)),
-                backgroundColor: AppTheme.surfaceElevated,
-                side: const BorderSide(color: AppTheme.border),
-                onPressed: () {
-                  setState(() => _localController.text = 'http://192.168.50.175:3900');
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _localController,
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
-            decoration: const InputDecoration(
-              labelText: 'Lokalna adresa',
-              hintText: 'http://192.168.50.175:3900 ili http://127.0.0.1:3900',
-              prefixIcon: Icon(Icons.home_work_outlined, size: 20, color: AppTheme.textMuted),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // 4. Remote URL configuration
-          const Text(
-            '2. UDALJENA ADRESA (CLOUDFLARE TUNEL)',
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _remoteController,
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
-            decoration: const InputDecoration(
-              labelText: 'Cloudflare Tunel URL',
-              hintText: 'https://studiovoice.trustshome.org',
-              prefixIcon: Icon(Icons.language_rounded, size: 20, color: AppTheme.textMuted),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // 5. Cloudflare Service Token (P1)
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              const Text(
-                'CLOUDFLARE ZERO TRUST TOKEN',
-                style: TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppTheme.accentCyan.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'ZA UDALJENI RAD',
-                  style: TextStyle(
-                    color: AppTheme.accentCyan,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Service Token omogućava mobilnoj aplikaciji pristup iza Cloudflare Accessa bez traženja PIN koda preko e-maila.',
-            style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
-          ),
-          const SizedBox(height: 10),
-
-          // Tutorial Expandable Card
-          InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => setState(() => _showTutorial = !_showTutorial),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.help_outline_rounded, color: AppTheme.primary, size: 20),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Kako kreirati Service Token u Cloudflareu?',
-                      style: TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _showTutorial ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                    color: AppTheme.textSecondary,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_showTutorial) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceElevated,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _TutorialStep(step: '1', text: 'Otvorite Cloudflare Zero Trust: dash.teams.cloudflare.com'),
-                  _TutorialStep(step: '2', text: 'U lijevom izborniku: Access ➔ Service Auth ➔ Service Tokens'),
-                  _TutorialStep(step: '3', text: 'Kliknite "Create Service Token" i unesite naziv "VoiceStudio Mobile"'),
-                  _TutorialStep(step: '4', text: 'Kopirajte Client ID i Client Secret (Secret se vidi samo jednom!)'),
-                  _TutorialStep(step: '5', text: 'Idite na Access ➔ Applications ➔ odaberite VoiceStudio aplikaciju ➔ Policies'),
-                  _TutorialStep(step: '6', text: 'Dodajte pravilo: Action: "Service Auth", Include: "Service Token" ➔ "VoiceStudio Mobile"'),
-                  _TutorialStep(step: '7', text: 'Zalijepite tokene u polja ispod i spremite postavke!'),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-
-          TextField(
-            controller: _cfIdController,
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
-            decoration: const InputDecoration(
-              labelText: 'CF-Access-Client-Id',
-              hintText: 'xxxxxxxx.access',
-              prefixIcon: Icon(Icons.key_rounded, size: 20, color: AppTheme.textMuted),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _cfSecretController,
-            obscureText: _obscureSecret,
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
-            decoration: InputDecoration(
-              labelText: 'CF-Access-Client-Secret',
-              prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20, color: AppTheme.textMuted),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureSecret ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                  size: 20,
-                  color: AppTheme.textMuted,
-                ),
-                onPressed: () => setState(() => _obscureSecret = !_obscureSecret),
-              ),
-            ),
-          ),
-          const SizedBox(height: 28),
-
-          // 6. Streaming Audio Toggle (P3)
+          // 3. Streaming Audio Toggle (Visible to all users)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
@@ -515,7 +442,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Zvuk počinje svirati odmah (za ~1–2 sek.) dok se ostatak teksta još sintetizira na računalu.',
+                        'Zvuk počinje svirati odmah (za ~1–2 sek.) dok se ostatak teksta još sintetizira.',
                         style: TextStyle(
                           color: AppTheme.textSecondary.withValues(alpha: 0.9),
                           fontSize: 11.5,
@@ -529,43 +456,150 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   activeThumbColor: AppTheme.accentCyan,
                   onChanged: (val) {
                     setState(() => _streamingEnabled = val);
+                    if (!isAdmin) {
+                      state.setStreamingEnabled(val);
+                    }
                   },
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 28),
 
-          // 7. Test Endpoints & Save CTAs
-          OutlinedButton.icon(
-            onPressed: _isTesting ? null : _runDetailedTest,
-            icon: _isTesting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentCyan),
-                  )
-                : const Icon(Icons.network_check_rounded, size: 18),
-            label: Text(_isTesting ? 'Testiram obje veze...' : 'Testiraj obje veze (Lokalno & Cloudflare)'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              side: const BorderSide(color: AppTheme.accentCyan),
+          // =====================================================================
+          // 4. ADMIN-ONLY INFRASTRUCTURE & CLOUDFLARE TOKEN SETTINGS
+          // (Completely hidden from standard users!)
+          // =====================================================================
+          if (isAdmin) ...[
+            const SizedBox(height: 28),
+            const Divider(color: AppTheme.border),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.security_rounded, color: AppTheme.primaryNeon, size: 18),
+                const SizedBox(width: 8),
+                const Text(
+                  'INFRASTRUKTURA I TOKENI (SAMO ZA ADMINA)',
+                  style: TextStyle(
+                    color: AppTheme.primaryNeon,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.7,
+                  ),
+                ),
+              ],
             ),
-          ),
-          if (_testResults != null) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Ovi podaci su skriveni od standardnih korisnika i sinkroniziraju se kroz zaštićeni Firebase Hub.',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+            ),
+            const SizedBox(height: 16),
+
+            // Connection Mode
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  _buildModeTab('auto', '⚡ Automatski', 'Lokalno pa CF'),
+                  _buildModeTab('local', '🏠 Lokalno', 'Samo Wi-Fi/USB'),
+                  _buildModeTab('remote', '☁️ Cloudflare', 'Samo udaljeno'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            TextField(
+              controller: _localController,
+              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
+              decoration: const InputDecoration(
+                labelText: 'Lokalna adresa (Wi-Fi / USB)',
+                hintText: 'http://192.168.50.175:3900',
+                prefixIcon: Icon(Icons.home_work_outlined, size: 20, color: AppTheme.textMuted),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _remoteController,
+              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
+              decoration: const InputDecoration(
+                labelText: 'Cloudflare Tunel URL',
+                hintText: 'https://studiovoice.trustshome.org',
+                prefixIcon: Icon(Icons.language_rounded, size: 20, color: AppTheme.textMuted),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _cfIdController,
+              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
+              decoration: const InputDecoration(
+                labelText: 'CF-Access-Client-Id',
+                prefixIcon: Icon(Icons.key_rounded, size: 20, color: AppTheme.textMuted),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _cfSecretController,
+              obscureText: _obscureSecret,
+              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13.5),
+              decoration: InputDecoration(
+                labelText: 'CF-Access-Client-Secret',
+                prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20, color: AppTheme.textMuted),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureSecret ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                    size: 20,
+                    color: AppTheme.textMuted,
+                  ),
+                  onPressed: () => setState(() => _obscureSecret = !_obscureSecret),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            CheckboxListTile(
+              value: _syncToFirebase,
+              activeColor: AppTheme.accentCyan,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Sinkroniziraj ove mrežne postavke u Firebase za sve odobrene korisnike',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              onChanged: (val) => setState(() => _syncToFirebase = val ?? true),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _isTesting ? null : _runDetailedTest,
+              icon: _isTesting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentCyan),
+                    )
+                  : const Icon(Icons.network_check_rounded, size: 18),
+              label: Text(_isTesting ? 'Testiram obje veze...' : 'Testiraj obje veze (Lokalno & Cloudflare)'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: const BorderSide(color: AppTheme.accentCyan),
+              ),
+            ),
+            if (_testResults != null) ...[
+              const SizedBox(height: 14),
+              _buildTestResultsCard(_testResults!),
+            ],
             const SizedBox(height: 14),
-            _buildTestResultsCard(_testResults!),
-          ],
-          const SizedBox(height: 14),
-
-          ElevatedButton.icon(
-            onPressed: state.isCheckingConnection || _isTesting ? null : _saveSettings,
-            icon: const Icon(Icons.save_rounded, size: 20),
-            label: const Text('Spremi promjene'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+            ElevatedButton.icon(
+              onPressed: state.isCheckingConnection || _isTesting ? null : _saveSettings,
+              icon: const Icon(Icons.save_rounded, size: 20),
+              label: const Text('Spremi i sinkroniziraj postavke'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 24),
         ],
       ),
@@ -690,45 +724,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: isOk ? AppTheme.accentGreen : AppTheme.primary,
         ),
       ],
-    );
-  }
-}
-
-class _TutorialStep extends StatelessWidget {
-  final String step;
-  final String text;
-
-  const _TutorialStep({required this.step, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 18,
-            height: 18,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: AppTheme.primary,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              step,
-              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

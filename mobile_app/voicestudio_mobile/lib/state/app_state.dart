@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import '../models/app_user.dart';
 import '../models/voice_profile.dart';
 import '../models/generation_history.dart';
 import '../models/saved_audio.dart';
@@ -10,6 +11,7 @@ import '../services/storage_service.dart';
 import '../services/api_client.dart';
 import '../services/audio_service.dart';
 import '../services/recorder_service.dart';
+import '../services/firebase_hub_service.dart';
 import '../utils/wav_utils.dart';
 
 class AppState extends ChangeNotifier {
@@ -17,6 +19,7 @@ class AppState extends ChangeNotifier {
   final ApiClient api;
   final AudioService audio;
   final RecorderService recorder;
+  final FirebaseHubService hub = FirebaseHubService();
 
   AppState({
     required this.storage,
@@ -28,6 +31,17 @@ class AppState extends ChangeNotifier {
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
 
+  AppUser? _currentUser;
+  AppUser? get currentUser => _currentUser;
+  bool get isAuthenticated => _currentUser != null;
+  bool get isApprovedUser => _currentUser != null && _currentUser!.canUseApp;
+  bool get isAdmin => _currentUser?.isAdmin == true;
+  bool get isPremium => _currentUser?.isPremium == true;
+
+  List<String> _allowedVoiceIds = List<String>.from(HubConnectionConfig.defaultAllowedVoiceIds);
+  List<String> get allowedVoiceIds => _allowedVoiceIds;
+  final Set<String> _myCreatedVoiceIds = {};
+
   bool _isConnected = false;
   bool get isConnected => _isConnected;
 
@@ -37,6 +51,12 @@ class AppState extends ChangeNotifier {
 
   int _idleSecondsRemaining = 0;
   int get idleSecondsRemaining => _idleSecondsRemaining;
+
+  int _queueLength = 0;
+  int get queueLength => _queueLength;
+
+  int _activeGpuJobs = 0;
+  int get activeGpuJobs => _activeGpuJobs;
 
   bool _isCheckingConnection = false;
   bool get isCheckingConnection => _isCheckingConnection;
@@ -116,7 +136,27 @@ class AppState extends ChangeNotifier {
   List<SavedAudio> _savedAudios = [];
   List<SavedAudio> get savedAudios => _savedAudios;
 
+  static const List<String> _defaultAllowedKeywords = [
+    'pantić',
+    'pantic',
+    'šojić',
+    'sojic',
+    'dijete',
+    'bata s',
+  ];
+
+  List<VoiceProfile> _filterProfilesForCurrentUser(List<VoiceProfile> all) {
+    if (isAdmin || isPremium) return all;
+    return all.where((p) {
+      if (_allowedVoiceIds.contains(p.id)) return true;
+      if (_myCreatedVoiceIds.contains(p.id)) return true;
+      final lower = p.name.toLowerCase();
+      return _defaultAllowedKeywords.any((kw) => lower.contains(kw));
+    }).toList();
+  }
+
   Future<void> init() async {
+    _currentUser = storage.getCurrentUser();
     _localServerUrl = storage.getLocalUrl();
     _remoteServerUrl = storage.getRemoteUrl();
     _connectionMode = storage.getConnectionMode();
@@ -132,8 +172,7 @@ class AppState extends ChangeNotifier {
     _draftText = storage.getDraftText();
     _savedAudios = storage.getSavedAudios();
 
-    // Load cached voice profiles immediately so UI is instant even when gateway is SLEEPING
-    final cached = storage.getCachedProfiles();
+    final cached = _filterProfilesForCurrentUser(storage.getCachedProfiles());
     if (cached.isNotEmpty) {
       _profiles = cached;
       final savedId = storage.getSelectedVoiceId();
@@ -148,10 +187,146 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     unawaited(WavUtils.cleanOldTempFiles());
-    await testConnectionAndRefresh();
+
+    if (_currentUser != null) {
+      await refreshUserAndSyncConfig();
+    }
+  }
+
+  Future<void> refreshUserAndSyncConfig() async {
+    if (_currentUser == null) return;
+    try {
+      final freshUser = await hub.refreshUserProfile(_currentUser!.uid);
+      if (freshUser != null) {
+        _currentUser = freshUser;
+        await storage.setCurrentUser(freshUser);
+      }
+      if (_currentUser != null && _currentUser!.canUseApp) {
+        final cfg = await hub.fetchConnectionConfig();
+        await _applyHubConnectionConfig(cfg);
+        await testConnectionAndRefresh();
+      } else {
+        await storage.clearSensitiveSessionData();
+        if (_currentUser != null) {
+          await storage.setCurrentUser(_currentUser);
+        }
+        _isConnected = false;
+      }
+    } catch (_) {
+      if (_currentUser != null && _currentUser!.canUseApp) {
+        await testConnectionAndRefresh();
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> _applyHubConnectionConfig(HubConnectionConfig cfg) async {
+    _allowedVoiceIds = List<String>.from(cfg.allowedVoiceIds);
+    if (cfg.remoteUrl.isNotEmpty) {
+      _remoteServerUrl = cfg.remoteUrl;
+      await storage.setRemoteUrl(cfg.remoteUrl);
+    }
+    if (cfg.localUrl.isNotEmpty && (_localServerUrl.isEmpty || !isAdmin)) {
+      _localServerUrl = cfg.localUrl;
+      await storage.setLocalUrl(cfg.localUrl);
+    }
+    if (cfg.cfClientId.isNotEmpty) {
+      _cfClientId = cfg.cfClientId;
+      await storage.setCfClientId(cfg.cfClientId);
+    }
+    if (cfg.cfClientSecret.isNotEmpty) {
+      _cfClientSecret = cfg.cfClientSecret;
+      await storage.setCfClientSecret(cfg.cfClientSecret);
+    }
+    api.resetActiveBaseUrl();
+  }
+
+  Future<AppUser> login({required String email, required String password}) async {
+    final user = await hub.loginWithEmailPassword(email, password);
+    _currentUser = user;
+    _profiles = [];
+    _selectedProfile = null;
+    await storage.setCurrentUser(user);
+    if (user.canUseApp) {
+      final cfg = await hub.fetchConnectionConfig();
+      await _applyHubConnectionConfig(cfg);
+      unawaited(testConnectionAndRefresh());
+    }
+    notifyListeners();
+    return user;
+  }
+
+  Future<AppUser> register({
+    required String displayName,
+    required String email,
+    required String password,
+    String? inviteCode,
+  }) async {
+    final user = await hub.registerUser(
+      displayName: displayName,
+      email: email,
+      password: password,
+      inviteCode: inviteCode,
+    );
+    _currentUser = user;
+    _profiles = [];
+    _selectedProfile = null;
+    await storage.setCurrentUser(user);
+    if (user.canUseApp) {
+      final cfg = await hub.fetchConnectionConfig();
+      await _applyHubConnectionConfig(cfg);
+      unawaited(testConnectionAndRefresh());
+    }
+    notifyListeners();
+    return user;
+  }
+
+  Future<AppUser> redeemInviteCode({
+    required String inviteCode,
+    required String displayName,
+  }) async {
+    final user = await hub.redeemInviteCodeLogin(
+      inviteCode: inviteCode,
+      displayName: displayName,
+    );
+    _currentUser = user;
+    _profiles = [];
+    _selectedProfile = null;
+    await storage.setCurrentUser(user);
+    final cfg = await hub.fetchConnectionConfig();
+    await _applyHubConnectionConfig(cfg);
+    unawaited(testConnectionAndRefresh());
+    notifyListeners();
+    return user;
+  }
+
+  Future<void> logout() async {
+    await audio.stop();
+    _currentUser = null;
+    _profiles = [];
+    _selectedProfile = null;
+    _myCreatedVoiceIds.clear();
+    _isConnected = false;
+    _backendStatus = 'OFFLINE';
+    _localServerUrl = '';
+    _remoteServerUrl = '';
+    _cfClientId = '';
+    _cfClientSecret = '';
+    await storage.clearSensitiveSessionData();
+    api.resetActiveBaseUrl();
+    notifyListeners();
+  }
+
+  Future<void> recordQuotaUsage() async {
+    if (_currentUser == null) return;
+    final updated = await hub.incrementUserUsage(_currentUser!);
+    _currentUser = updated;
+    await storage.setCurrentUser(updated);
+    notifyListeners();
   }
 
   Future<void> testConnectionAndRefresh({bool forceWake = false}) async {
+    if (!isApprovedUser) return;
     _isCheckingConnection = true;
     _errorMessage = null;
     notifyListeners();
@@ -161,9 +336,10 @@ class AppState extends ChangeNotifier {
       _isConnected = info.reachable;
       _backendStatus = info.backendStatus;
       _idleSecondsRemaining = info.idleSecondsRemaining;
+      _queueLength = info.queueLength;
+      _activeGpuJobs = info.activeGpuJobs;
 
       if (_isConnected) {
-        // Only query /profiles and /history if backend is already awake, or if we have no cached profiles, or if user requested forceWake
         if (!isBackendSleeping || _profiles.isEmpty || forceWake) {
           await refreshProfiles();
           await refreshHistory();
@@ -195,6 +371,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> sleepEngine() async {
+    if (!isAdmin) return false;
     _isCheckingConnection = true;
     notifyListeners();
     try {
@@ -239,14 +416,15 @@ class AppState extends ChangeNotifier {
 
     try {
       final freshProfiles = await api.getProfiles();
-      if (freshProfiles.isNotEmpty) {
-        _profiles = freshProfiles;
-        await storage.setCachedProfiles(freshProfiles);
+      final filtered = _filterProfilesForCurrentUser(freshProfiles);
+      if (filtered.isNotEmpty) {
+        _profiles = filtered;
+        await storage.setCachedProfiles(filtered);
       }
       final savedId = storage.getSelectedVoiceId();
       if (savedId != null && _profiles.any((p) => p.id == savedId)) {
         _selectedProfile = _profiles.firstWhere((p) => p.id == savedId);
-      } else if (_profiles.isNotEmpty && _selectedProfile == null) {
+      } else if (_profiles.isNotEmpty) {
         _selectedProfile = _profiles.first;
       }
     } catch (e) {
@@ -313,6 +491,7 @@ class AppState extends ChangeNotifier {
     required String newCfClientId,
     required String newCfClientSecret,
     required bool newStreamingEnabled,
+    bool syncToFirebaseHub = false,
   }) async {
     _localServerUrl = newLocalUrl;
     _remoteServerUrl = newRemoteUrl;
@@ -329,6 +508,22 @@ class AppState extends ChangeNotifier {
     await storage.setStreamingEnabled(newStreamingEnabled);
     api.resetActiveBaseUrl();
 
+    if (syncToFirebaseHub && isAdmin) {
+      final currentCfg = await hub.fetchConnectionConfig();
+      await hub.saveConnectionConfig(
+        HubConnectionConfig(
+          remoteUrl: newRemoteUrl,
+          localUrl: newLocalUrl,
+          cfClientId: newCfClientId,
+          cfClientSecret: newCfClientSecret,
+          autoApproveNewUsers: currentCfg.autoApproveNewUsers,
+          defaultDailyQuota: currentCfg.defaultDailyQuota,
+          adminEmail: currentCfg.adminEmail,
+          allowedVoiceIds: currentCfg.allowedVoiceIds,
+        ),
+      );
+    }
+
     notifyListeners();
     await testConnectionAndRefresh();
   }
@@ -344,6 +539,19 @@ class AppState extends ChangeNotifier {
 
   Future<void> generateSpeech(String text) async {
     if (text.trim().isEmpty) return;
+
+    if (_currentUser != null && !_currentUser!.hasQuotaLeft) {
+      _errorMessage =
+          'Dosegnuli ste dnevni limit (${_currentUser!.dailyQuota} sinteza danas). Pokušajte sutra ili kontaktirajte administratora.';
+      notifyListeners();
+      return;
+    }
+
+    if (!isAdmin && text.trim().length > 4000) {
+      _errorMessage = 'Maksimalna duljina teksta po zahtjevu je 4.000 znakova.';
+      notifyListeners();
+      return;
+    }
 
     _activeCancelToken?.cancel();
     final cancelToken = CancelToken();
@@ -401,6 +609,7 @@ class AppState extends ChangeNotifier {
 
       _backendStatus = 'RUNNING';
       _lastGeneration = result;
+      unawaited(recordQuotaUsage());
       unawaited(refreshHistory());
     } catch (e) {
       final msg = e.toString().replaceAll('Exception: ', '');
@@ -435,6 +644,7 @@ class AppState extends ChangeNotifier {
   }) async {
     try {
       final profile = await api.createProfile(name: name, audioPath: audioPath);
+      _myCreatedVoiceIds.add(profile.id);
       _backendStatus = 'RUNNING';
       await refreshProfiles();
       selectProfile(profile);
@@ -461,6 +671,7 @@ class AppState extends ChangeNotifier {
         language: language,
         sampleScript: sampleScript,
       );
+      _myCreatedVoiceIds.add(profile.id);
       _backendStatus = 'RUNNING';
       await refreshProfiles();
       selectProfile(profile);
@@ -475,6 +686,7 @@ class AppState extends ChangeNotifier {
   Future<VoiceProfile> useArchetype(String archetypeId, {String? customName}) async {
     try {
       final profile = await api.useArchetype(archetypeId, customName: customName);
+      _myCreatedVoiceIds.add(profile.id);
       _backendStatus = 'RUNNING';
       await refreshProfiles();
       selectProfile(profile);
@@ -489,19 +701,19 @@ class AppState extends ChangeNotifier {
   Future<void> deleteProfile(String profileId) async {
     try {
       await api.deleteProfile(profileId);
+      _myCreatedVoiceIds.remove(profileId);
       if (_selectedProfile?.id == profileId) {
         _selectedProfile = null;
         storage.setSelectedVoiceId(null);
       }
       await refreshProfiles();
     } catch (e) {
-      _errorMessage = 'Greška brisanja profila: $e';
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       rethrow;
     }
   }
 
-  /// Save generated take to persistent offline library on phone
   Future<SavedAudio> saveToLibrary({
     required File file,
     required String text,
@@ -537,7 +749,6 @@ class AppState extends ChangeNotifier {
     return item;
   }
 
-  /// Download a server history item and save it to offline phone library
   Future<SavedAudio> saveHistoryItemToLibrary(GenerationHistory historyItem) async {
     final tempFile = await api.downloadAudioFile(historyItem.filename);
     return await saveToLibrary(

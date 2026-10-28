@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
+import '../models/app_user.dart';
 import '../models/saved_audio.dart';
 import '../models/voice_profile.dart';
 
@@ -11,6 +12,35 @@ class StorageService {
   static Future<StorageService> init() async {
     final prefs = await SharedPreferences.getInstance();
     return StorageService(prefs);
+  }
+
+  AppUser? getCurrentUser() {
+    final raw = _prefs.getString(AppConstants.prefCurrentUserJson);
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      return AppUser.decode(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setCurrentUser(AppUser? user) async {
+    if (user == null) {
+      await _prefs.remove(AppConstants.prefCurrentUserJson);
+    } else {
+      await _prefs.setString(AppConstants.prefCurrentUserJson, user.encode());
+    }
+  }
+
+  Future<void> clearSensitiveSessionData() async {
+    await _prefs.remove(AppConstants.prefCurrentUserJson);
+    await _prefs.remove(AppConstants.prefCfClientId);
+    await _prefs.remove(AppConstants.prefCfClientSecret);
+    await _prefs.remove(AppConstants.prefRemoteUrl);
+    await _prefs.remove(AppConstants.prefLocalUrl);
+    await _prefs.remove(AppConstants.prefServerUrl);
+    await _prefs.remove(AppConstants.prefCachedProfiles);
+    await _prefs.remove(AppConstants.prefSelectedVoiceId);
   }
 
   String getServerUrl() {

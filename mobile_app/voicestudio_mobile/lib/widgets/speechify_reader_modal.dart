@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
@@ -94,7 +96,6 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
     final state = context.read<AppState>();
     final index = _currentIndex;
 
-    // If already cached/prefetched, play immediately!
     final cached = _cache[index];
     if (cached != null && await cached.audioFile.exists()) {
       await state.audio.playFile(cached.audioFile);
@@ -126,7 +127,8 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
       setState(() => _isSynthesizingCurrent = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Greška pri čitanju odlomka: ${e.toString().replaceAll("Exception: ", "")}'),
+          content: Text(
+              'Greška pri čitanju odlomka: ${e.toString().replaceAll("Exception: ", "")}'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -134,7 +136,10 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
   }
 
   Future<void> _prefetchNextParagraph(int nextIndex) async {
-    if (nextIndex >= _chunks.length || _cache.containsKey(nextIndex) || _isPrefetchingNext || !mounted) {
+    if (nextIndex >= _chunks.length ||
+        _cache.containsKey(nextIndex) ||
+        _isPrefetchingNext ||
+        !mounted) {
       return;
     }
     final state = context.read<AppState>();
@@ -175,6 +180,105 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
       setState(() => _currentIndex--);
       _readCurrentParagraph();
     }
+  }
+
+  Widget _buildWordSyncedParagraph(String paragraphText, AppState state) {
+    final words = paragraphText
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return const SizedBox.shrink();
+
+    final weights = words.map((w) {
+      final cleanLen =
+          w.replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '').length;
+      double weight = math.max(2, cleanLen).toDouble();
+      if (RegExp(r'[.!?…]+$').hasMatch(w)) {
+        weight += 6.0;
+      } else if (RegExp(r'[,;:—\-]+$').hasMatch(w)) {
+        weight += 3.0;
+      }
+      return weight;
+    }).toList();
+
+    final totalWeight = weights.fold<double>(0.0, (a, b) => a + b);
+
+    return StreamBuilder<Duration>(
+      stream: state.audio.positionStream,
+      builder: (context, posSnap) {
+        final pos = posSnap.data ?? state.audio.currentPosition;
+        final dur = state.audio.totalDuration;
+        final totalMs = (dur != null && dur.inMilliseconds > 200)
+            ? dur.inMilliseconds
+            : math.max(1200, (words.length / 2.6 * 1000).round());
+        final progress = (pos.inMilliseconds / totalMs).clamp(0.0, 1.0);
+
+        int activeIdx = -1;
+        double cum = 0.0;
+        final starts = <double>[];
+        for (int i = 0; i < words.length; i++) {
+          final s = cum / totalWeight;
+          starts.add(s);
+          cum += weights[i];
+          final e = cum / totalWeight;
+          if (activeIdx == -1 && progress >= s && progress <= e + 0.002) {
+            activeIdx = i;
+          }
+        }
+
+        return Wrap(
+          spacing: 5,
+          runSpacing: 6,
+          children: List.generate(words.length, (wIdx) {
+            final isWordCurrent =
+                wIdx == activeIdx && !_isSynthesizingCurrent;
+            final isWordSpoken =
+                wIdx < activeIdx && !_isSynthesizingCurrent;
+
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                final targetMs = (starts[wIdx] * totalMs).round();
+                state.audio.seek(Duration(milliseconds: targetMs));
+                if (!state.audio.isPlaying) {
+                  state.audio.resume();
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isWordCurrent ? 6 : 2,
+                  vertical: isWordCurrent ? 2 : 1,
+                ),
+                decoration: BoxDecoration(
+                  color: isWordCurrent
+                      ? AppTheme.accentCyan
+                      : (isWordSpoken
+                          ? AppTheme.accentCyan.withValues(alpha: 0.10)
+                          : Colors.transparent),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  words[wIdx],
+                  style: TextStyle(
+                    color: isWordCurrent
+                        ? const Color(0xFF071018)
+                        : (isWordSpoken
+                            ? AppTheme.textPrimary
+                            : AppTheme.textSecondary),
+                    fontSize: 16,
+                    fontWeight: isWordCurrent
+                        ? FontWeight.w800
+                        : (isWordSpoken ? FontWeight.w600 : FontWeight.w500),
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
   }
 
   @override
@@ -220,7 +324,8 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                               color: AppTheme.primary.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(Icons.auto_stories_rounded, color: AppTheme.primary, size: 20),
+                            child: const Icon(Icons.auto_stories_rounded,
+                                color: AppTheme.primary, size: 20),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -240,7 +345,8 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                                   '${_isPrefetchingNext ? " • ⚡ Spremanje idućeg..." : (_cache.containsKey(_currentIndex + 1) ? " • ✓ Idući spreman" : "")}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+                                  style: const TextStyle(
+                                      color: AppTheme.textMuted, fontSize: 11.5),
                                 ),
                               ],
                             ),
@@ -248,17 +354,20 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                         ],
                       ),
                     ),
-                    // Auto-advance chip
                     FilterChip(
-                      label: const Text('Auto', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                      label: const Text('Auto',
+                          style: TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.w700)),
                       selected: _autoAdvance,
                       onSelected: (v) => setState(() => _autoAdvance = v),
-                      selectedColor: AppTheme.accentCyan.withValues(alpha: 0.25),
+                      selectedColor:
+                          AppTheme.accentCyan.withValues(alpha: 0.25),
                       checkmarkColor: AppTheme.accentCyan,
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                      icon: const Icon(Icons.close_rounded,
+                          color: AppTheme.textMuted),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
@@ -285,10 +394,13 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: isCurrent ? AppTheme.surfaceHighlight : AppTheme.surface,
+                      color: isCurrent
+                          ? AppTheme.surfaceHighlight
+                          : AppTheme.surface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isCurrent ? AppTheme.primaryNeon : AppTheme.border,
+                        color:
+                            isCurrent ? AppTheme.primaryNeon : AppTheme.border,
                         width: isCurrent ? 1.5 : 1,
                       ),
                     ),
@@ -299,28 +411,36 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'ODLOMAK ${idx + 1}',
+                              isCurrent
+                                  ? 'ODLOMAK ${idx + 1} • PRAĆENJE RIJEČI'
+                                  : 'ODLOMAK ${idx + 1}',
                               style: TextStyle(
-                                color: isCurrent ? AppTheme.accentCyan : AppTheme.textMuted,
+                                color: isCurrent
+                                    ? AppTheme.accentCyan
+                                    : AppTheme.textMuted,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 0.6,
                               ),
                             ),
                             if (isCached)
-                              const Icon(Icons.bolt_rounded, size: 15, color: AppTheme.accentGreen),
+                              const Icon(Icons.bolt_rounded,
+                                  size: 15, color: AppTheme.accentGreen),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _chunks[idx],
-                          style: TextStyle(
-                            color: isCurrent ? AppTheme.textPrimary : AppTheme.textSecondary,
-                            fontSize: isCurrent ? 16 : 14,
-                            height: 1.55,
-                            fontWeight: isCurrent ? FontWeight.w500 : FontWeight.w400,
+                        const SizedBox(height: 8),
+                        if (isCurrent)
+                          _buildWordSyncedParagraph(_chunks[idx], state)
+                        else
+                          Text(
+                            _chunks[idx],
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 14,
+                              height: 1.55,
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -331,7 +451,8 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
 
           // Bottom Controls & Player Bar
           Container(
-            padding: EdgeInsets.fromLTRB(20, 14, 20, 14 + MediaQuery.of(context).padding.bottom),
+            padding: EdgeInsets.fromLTRB(
+                20, 14, 20, 14 + MediaQuery.of(context).padding.bottom),
             decoration: const BoxDecoration(
               color: AppTheme.surfaceElevated,
               border: Border(top: BorderSide(color: AppTheme.border)),
@@ -344,9 +465,13 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.skip_previous_rounded, size: 32),
-                      color: _currentIndex > 0 ? AppTheme.accentCyan : AppTheme.border,
-                      onPressed: _currentIndex > 0 ? _previousParagraph : null,
+                      icon:
+                          const Icon(Icons.skip_previous_rounded, size: 32),
+                      color: _currentIndex > 0
+                          ? AppTheme.accentCyan
+                          : AppTheme.border,
+                      onPressed:
+                          _currentIndex > 0 ? _previousParagraph : null,
                     ),
                     GestureDetector(
                       onTap: _isSynthesizingCurrent
@@ -370,7 +495,8 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: AppTheme.primaryNeon.withValues(alpha: 0.4),
+                              color:
+                                  AppTheme.primaryNeon.withValues(alpha: 0.4),
                               blurRadius: 16,
                             ),
                           ],
@@ -380,10 +506,13 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                               ? const SizedBox(
                                   width: 22,
                                   height: 22,
-                                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.5, color: Colors.white),
                                 )
                               : Icon(
-                                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                  isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
                                   color: Colors.white,
                                   size: 34,
                                 ),
@@ -392,8 +521,12 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.skip_next_rounded, size: 32),
-                      color: _currentIndex < _chunks.length - 1 ? AppTheme.accentCyan : AppTheme.border,
-                      onPressed: _currentIndex < _chunks.length - 1 ? _nextParagraph : null,
+                      color: _currentIndex < _chunks.length - 1
+                          ? AppTheme.accentCyan
+                          : AppTheme.border,
+                      onPressed: _currentIndex < _chunks.length - 1
+                          ? _nextParagraph
+                          : null,
                     ),
                   ],
                 );
