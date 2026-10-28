@@ -175,6 +175,14 @@ async function startBackend() {
   if (backendState === "RUNNING") return true;
   if (backendState === "STARTING" && startupPromise) return startupPromise;
 
+  // Ako je backend vec aktivan na portu 3905 (npr. postojeci proces), koristi ga odmah
+  if (await checkBackendReady()) {
+    backendState = "RUNNING";
+    lastActivityTime = Date.now();
+    log("VoiceStudio backend je vec aktivan na portu 3905.");
+    return true;
+  }
+
   backendState = "STARTING";
   log("Pokrecem VoiceStudio backend (on-demand start)...");
   const startTime = Date.now();
