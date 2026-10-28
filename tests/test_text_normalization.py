@@ -85,6 +85,20 @@ _CHANGE_CASES = [
     (None, "a�b", "ab"),
     (None, "Tom &amp; Jerry", "Tom & Jerry"),
     (None, "one&nbsp;space", "one space"),
+    # Markdown formatting stripped before synthesis (#3197)
+    ("English", "Say **bold** word", "Say bold word"),
+    ("English", "Say __bold__ word", "Say bold word"),
+    ("English", "Say *italic* word", "Say italic word"),
+    ("English", "Say _italic_ word", "Say italic word"),
+    ("English", "**bold** and **more** here", "bold and more here"),
+    ("English", "### Section Heading", "Section Heading"),
+    ("English", "Run python script.py now", "Run python script.py now"),
+    ("English", "Visit [VoiceStudio](https://github.com) now", "Visit VoiceStudio now"),
+    # Punctuation spacing cleaned (no orphan spaces before punctuation)
+    (None, "word , another . next ? last !", "word, another. next? last!"),
+    # Multiplication and bracket tags preserved
+    ("English", "2 * 3 = 6", "two * three = six"),
+    ("English", "**Hello [pause 300ms] world**", "Hello [pause 300ms] world"),
 ]
 
 
@@ -163,6 +177,10 @@ _UNCHANGED_CASES = [
     # Bracket grammar is never rewritten
     ("English", "[pause 300ms] then [rate 0.9] speech [voice:Alice]"),
     ("English", "[[term|5]] stays bracket-managed"),
+    # Preserved code identifiers and arithmetic
+    ("English", "use snake_case names"),
+    ("English", "foo__bar__baz here"),
+    ("English", "a lone * stays"),
     # Plain text is byte-identical
     ("English", "The quick brown fox jumps."),
     (None, "already clean text"),

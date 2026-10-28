@@ -36,6 +36,28 @@ class TextInputCard extends StatefulWidget {
     required this.onClear,
   });
 
+  /// Automatically cleans markdown and punctuation quirks before speech synthesis
+  static String cleanTextForSpeech(String text) {
+    if (text.isEmpty) return text;
+    var out = text;
+    out = out.replaceAllMapped(
+        RegExp(r'\[([^\]]+)\]\([^\)]+\)'), (m) => m[1] ?? '');
+    out = out.replaceAllMapped(
+        RegExp(r'`([^`]+)`'), (m) => m[1] ?? '');
+    out = out.replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
+    out = out.replaceAllMapped(
+        RegExp(r'\*\*([^*]+)\*\*'), (m) => m[1] ?? '');
+    out = out.replaceAllMapped(
+        RegExp(r'\*([^*]+)\*'), (m) => m[1] ?? '');
+    out = out.replaceAllMapped(
+        RegExp(r'__([^_]+)__'), (m) => m[1] ?? '');
+    out = out.replaceAllMapped(
+        RegExp(r'(?<=\s|^)_([^_]+)_(?=\s|[.,:;?!]|$)'), (m) => m[1] ?? '');
+    out = out.replaceAll(RegExp(r'\s+([,.:;?!])'), r'$1');
+    out = out.replaceAll(RegExp(r'[^\S\n]+'), ' ');
+    return out.trim();
+  }
+
   @override
   State<TextInputCard> createState() => _TextInputCardState();
 }
@@ -141,7 +163,7 @@ class _TextInputCardState extends State<TextInputCard> {
   Future<void> _pasteClipboard() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (data?.text != null && data!.text!.isNotEmpty) {
-      widget.controller.text = data.text!;
+      widget.controller.text = TextInputCard.cleanTextForSpeech(data.text!);
     }
   }
 

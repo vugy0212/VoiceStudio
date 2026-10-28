@@ -61,6 +61,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import unicodedata
 from typing import Callable, Optional
 
 logger = logging.getLogger("omnivoice.text_normalization")
@@ -313,11 +314,25 @@ _HSPACE_RE = re.compile(r"[^\S\n]+")   # horizontal whitespace runs → one spac
 _NEWLINE_RE = re.compile(r"\n{3,}")    # blank-line floods → one blank line
 
 
+_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.:;?!])")
+_OPEN_PUNCT_SPACE_RE = re.compile(r"([(\[{])\s+")
+_CLOSE_PUNCT_SPACE_RE = re.compile(r"\s+([)\]}])")
+_MD_HEADER_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)
+_MD_CODE_RE = re.compile(r"`([^`]+)`")
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^\)]+\)")
+
+
 def _safety_filters(text: str) -> str:
     out = _strip_unsafe_controls(text)
     out = _ENTITY_RE.sub(lambda m: _ENTITIES.get(m.group(0), "&"), out)
+    out = _MD_HEADER_RE.sub("", out)
+    out = _MD_LINK_RE.sub(r"\1", out)
+    out = _MD_CODE_RE.sub(r"\1", out)
     out = _REPEAT_RE.sub(lambda m: m.group(1) * 3, out)
     out = _HSPACE_RE.sub(" ", out)
+    out = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", out)
+    out = _OPEN_PUNCT_SPACE_RE.sub(r"\1", out)
+    out = _CLOSE_PUNCT_SPACE_RE.sub(r"\1", out)
     out = _NEWLINE_RE.sub("\n\n", out)
     return out.strip()
 
@@ -329,6 +344,111 @@ def _safety_filters(text: str) -> str:
 # belongs to the pronunciation layer. Bounded repetition keeps it linear.
 
 _BRACKET_SPAN_RE = re.compile(r"\[[^\][\n]{0,128}\]")
+
+def _is_wordch(ch: str) -> bool:
+    return (
+        ch == "_"
+        or ch.isalnum()
+        or unicodedata.combining(ch) != 0
+        or unicodedata.category(ch) in ("Mc", "Me")
+    )
+
+
+def _delim_tokens(text: str, ch: str) -> list[tuple[int, int, int, int]]:
+    """Split each maximal run of ch into ** tokens then at most one *."""
+    toks: list[tuple[int, int, int, int]] = []
+    for m in re.finditer(re.escape(ch) + "+", text):
+        rs, re_ = m.start(), m.end()
+        k = rs
+        while k > 0 and text[k - 1] == "\\":
+            k -= 1
+        if (rs - k) % 2:
+            rs += 1
+            if rs >= re_:
+                continue
+        s, n = rs, re_ - rs
+        while n > 3:
+            toks.append((s, 2, rs, re_))
+            s += 2
+            n -= 2
+        if n == 3:
+            toks.append((s, 2, rs, re_))
+            toks.append((s + 2, 1, rs, re_))
+        else:
+            toks.append((s, n, rs, re_))
+    return toks
+
+
+def _open_ok(
+    text: str, tok: tuple[int, int, int, int], n: int, word_guarded: bool
+) -> bool:
+    s, L, rs, _re = tok
+    if s + L > n - 1 or text[s + L].isspace():
+        return False
+    if not word_guarded and rs > 0 and text[rs - 1].isdigit() and text[s + L].isdigit():
+        return False
+    return not word_guarded or rs == 0 or not _is_wordch(text[rs - 1])
+
+
+def _close_ok(
+    text: str, tok: tuple[int, int, int, int], n: int, word_guarded: bool
+) -> bool:
+    s, _L, _rs, re_ = tok
+    if s == 0 or text[s - 1].isspace():
+        return False
+    if not word_guarded and re_ < n and text[s - 1].isdigit() and text[re_].isdigit():
+        return False
+    return not word_guarded or re_ >= n or not _is_wordch(text[re_])
+
+
+def _pair_spans(
+    text: str, tokens: list[tuple[int, int, int, int]], word_guarded: bool
+) -> list[tuple[int, int]]:
+    drop: list[tuple[int, int]] = []
+    stack: list[tuple[int, int]] = []
+    n = len(text)
+    for tok in tokens:
+        s, L = tok[0], tok[1]
+        if stack and _close_ok(text, tok, n, word_guarded):
+            os_, oL = stack.pop()
+            drop.append((os_, os_ + oL))
+            drop.append((s, s + L))
+        elif _open_ok(text, tok, n, word_guarded):
+            stack.append((s, L))
+    return drop
+
+
+def _delete_spans(text: str, spans: list[tuple[int, int]]) -> str:
+    """Remove ascending, non-overlapping spans with a single join."""
+    parts: list[str] = []
+    last = 0
+    for a, b in spans:
+        parts.append(text[last:a])
+        last = b
+    parts.append(text[last:])
+    return "".join(parts)
+
+
+_MASK_RE = re.compile(r"\x00(\d+)\x00")
+
+
+def _strip_markdown_emphasis(text: str) -> str:
+    spans: list[str] = []
+
+    def _mask(m: re.Match) -> str:
+        spans.append(m.group(0))
+        return f"\x00{len(spans) - 1}\x00"
+
+    out = _BRACKET_SPAN_RE.sub(_mask, text)
+    for ch, guarded in (("*", False), ("_", True)):
+        for L in (1, 2):
+            toks = [t for t in _delim_tokens(out, ch) if t[1] == L]
+            out = _delete_spans(out, sorted(_pair_spans(out, toks, guarded)))
+    result = _MASK_RE.sub(lambda m: spans[int(m.group(1))], out)
+    if result != text:
+        result = _REPEAT_RE.sub(lambda m: m.group(1) * 3, result)
+    return result
+
 
 
 def _outside_brackets(text: str, fn: Callable[[str], str]) -> str:
@@ -570,6 +690,7 @@ def normalize_text(text: str, language: Optional[str] = None) -> str:
     if not text:
         return text or ""
     out = _safety_filters(text)
+    out = _strip_markdown_emphasis(out)
     # Runs outside the num2words gate below: ko/ja/zh keep their digits (that
     # gate returns None for them) but still need the range mark spoken.
     plain = _plain_lang_code(language)
