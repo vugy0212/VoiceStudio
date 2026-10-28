@@ -295,72 +295,80 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
           const SizedBox(width: 6),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () => state.refreshUserAndSyncConfig(),
-        color: AppTheme.primary,
-        backgroundColor: AppTheme.surfaceElevated,
-        child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          children: [
-            // User Quota / Queue Indicator + Connection Badge
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Row(
-                children: [
-                  if (user != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceElevated,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            state.isAdmin
-                                ? Icons.shield_rounded
-                                : (state.isPremium
-                                    ? Icons.workspace_premium_rounded
-                                    : Icons.bolt_rounded),
-                            size: 13,
-                            color: state.isAdmin
-                                ? AppTheme.primaryNeon
-                                : (state.isPremium
-                                    ? Colors.amberAccent
-                                    : AppTheme.accentCyan),
+      body: SafeArea(
+        top: false,
+        child: RefreshIndicator(
+          onRefresh: () => state.refreshUserAndSyncConfig(),
+          color: AppTheme.primary,
+          backgroundColor: AppTheme.surfaceElevated,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
+            children: [
+              // User Quota / Queue Indicator + Connection Badge
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  children: [
+                    if (user != null)
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceElevated,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppTheme.border),
                           ),
-                          const SizedBox(width: 5),
-                          Text(
-                            state.isAdmin
-                                ? 'Admin (${user.displayName})'
-                                : '${state.isPremium ? "⭐ Premium" : "Demo"} • Kvota: ${user.remainingQuota}/${user.dailyQuota}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.textSecondary,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                state.isAdmin
+                                    ? Icons.shield_rounded
+                                    : (state.isPremium
+                                        ? Icons.workspace_premium_rounded
+                                        : Icons.bolt_rounded),
+                                size: 13,
+                                color: state.isAdmin
+                                    ? AppTheme.primaryNeon
+                                    : (state.isPremium
+                                        ? Colors.amberAccent
+                                        : AppTheme.accentCyan),
+                              ),
+                              const SizedBox(width: 5),
+                              Flexible(
+                                child: Text(
+                                  state.isAdmin
+                                      ? 'Admin (${user.displayName})'
+                                      : '${state.isPremium ? "⭐ Premium" : "Demo"} • Kvota: ${user.remainingQuota}/${user.dailyQuota}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
+                    const SizedBox(width: 8),
+                    ConnectionBadge(
+                      isConnected: state.isConnected,
+                      isChecking: state.isCheckingConnection,
+                      isUsingLocal: state.isUsingLocalUrl,
+                      backendStatus: state.backendStatus,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                        );
+                      },
+                      onLongPress: state.isAdmin ? () => _toggleGatewayPower(state) : null,
                     ),
-                  const Spacer(),
-                  ConnectionBadge(
-                    isConnected: state.isConnected,
-                    isChecking: state.isCheckingConnection,
-                    isUsingLocal: state.isUsingLocalUrl,
-                    backendStatus: state.backendStatus,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                      );
-                    },
-                    onLongPress: state.isAdmin ? () => _toggleGatewayPower(state) : null,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: 10),
 
             // 1. Voice Profiles Carousel
@@ -645,7 +653,8 @@ class _HomeTtsScreenState extends State<HomeTtsScreen> {
                   },
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );

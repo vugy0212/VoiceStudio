@@ -484,21 +484,26 @@ class _TextInputCardState extends State<TextInputCard> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      showKaraokeView
-                          ? 'Dodirnite riječ za skok • "Stop" za zaustavljanje'
-                          : '$wordCount riječi • $charCount znakova',
-                      style: TextStyle(
-                        color: showKaraokeView
-                            ? AppTheme.accentCyan.withValues(alpha: 0.9)
-                            : AppTheme.textMuted,
-                        fontSize: 11.5,
-                        fontWeight: showKaraokeView
-                            ? FontWeight.w600
-                            : FontWeight.normal,
+                    Expanded(
+                      child: Text(
+                        showKaraokeView
+                            ? 'Dodirnite riječ za skok • "Stop" za zaustavljanje'
+                            : '$wordCount riječi • $charCount znakova',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: showKaraokeView
+                              ? AppTheme.accentCyan.withValues(alpha: 0.9)
+                              : AppTheme.textMuted,
+                          fontSize: 11.5,
+                          fontWeight: showKaraokeView
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
                       ),
                     ),
-                    if (charCount > 0)
+                    if (charCount > 0) ...[
+                      const SizedBox(width: 8),
                       Text(
                         '~${(wordCount / 2.5).ceil()}s procjena',
                         style: const TextStyle(
@@ -507,6 +512,7 @@ class _TextInputCardState extends State<TextInputCard> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),

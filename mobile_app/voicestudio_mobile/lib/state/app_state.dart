@@ -477,6 +477,10 @@ class AppState extends ChangeNotifier {
   void selectProfile(VoiceProfile? profile) {
     _selectedProfile = profile;
     storage.setSelectedVoiceId(profile?.id);
+    if (profile != null && profile.kind != 'design') {
+      _instruct = '';
+      storage.setInstruct('');
+    }
     notifyListeners();
   }
 

@@ -546,13 +546,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 const Icon(Icons.security_rounded, color: AppTheme.primaryNeon, size: 18),
                 const SizedBox(width: 8),
-                const Text(
-                  'INFRASTRUKTURA I TOKENI (SAMO ZA ADMINA)',
-                  style: TextStyle(
-                    color: AppTheme.primaryNeon,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.7,
+                const Expanded(
+                  child: Text(
+                    'INFRASTRUKTURA I TOKENI (SAMO ZA ADMINA)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.primaryNeon,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.7,
+                    ),
                   ),
                 ),
               ],

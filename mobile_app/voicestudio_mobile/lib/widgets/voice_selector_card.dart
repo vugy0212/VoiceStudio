@@ -234,8 +234,10 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
 
   @override
   Widget build(BuildContext context) {
-    final profiles = widget.profiles;
+    final allProfiles = widget.profiles;
     final archetypes = BuiltInArchetypePreset.presets;
+    final clonedProfiles =
+        allProfiles.where((p) => p.kind != 'design').toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,18 +247,23 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Glasovni profili & Arhetipovi',
-                style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+              const Expanded(
+                child: Text(
+                  'Glasovi & Arhetipovi',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (profiles.isNotEmpty)
+                  if (clonedProfiles.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: GestureDetector(
@@ -328,28 +335,29 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
         ),
         const SizedBox(height: 8),
 
-        // Quick Category Filter Pills (Svi | Klonirani | 🎭 Arhetipovi (6))
-        Padding(
+        // Quick Category Filter Pills (Svi | Klonirani | Arhetipovi (6))
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               _buildFilterChip(
                 mode: 'all',
-                label: 'Svi (${profiles.length} + ${archetypes.length})',
+                label: 'Svi (${clonedProfiles.length} + ${archetypes.length})',
                 icon: Icons.layers_rounded,
                 activeColor: AppTheme.accentCyan,
               ),
               const SizedBox(width: 6),
               _buildFilterChip(
                 mode: 'cloned',
-                label: 'Klonirani (${profiles.length})',
+                label: 'Klonirani (${clonedProfiles.length})',
                 icon: Icons.mic_rounded,
                 activeColor: AppTheme.primary,
               ),
               const SizedBox(width: 6),
               _buildFilterChip(
                 mode: 'archetypes',
-                label: '🎭 Arhetipovi (${archetypes.length})',
+                label: 'Arhetipovi (${archetypes.length})',
                 icon: Icons.theater_comedy_rounded,
                 activeColor: Colors.amber,
               ),
@@ -360,7 +368,9 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
 
         SizedBox(
           height: 112,
-          child: widget.isLoading && profiles.isEmpty && _filterMode == 'cloned'
+          child: widget.isLoading &&
+                  clonedProfiles.isEmpty &&
+                  _filterMode == 'cloned'
               ? ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   scrollDirection: Axis.horizontal,
@@ -383,7 +393,12 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
                     ),
                   ),
                 )
-              : _buildCombinedHorizontalList(context, profiles, archetypes),
+              : _buildCombinedHorizontalList(
+                  context,
+                  clonedProfiles,
+                  allProfiles,
+                  archetypes,
+                ),
         ),
       ],
     );
@@ -440,7 +455,8 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
 
   Widget _buildCombinedHorizontalList(
     BuildContext context,
-    List<VoiceProfile> profiles,
+    List<VoiceProfile> clonedProfiles,
+    List<VoiceProfile> allProfiles,
     List<BuiltInArchetypePreset> archetypes,
   ) {
     final showCloned = _filterMode == 'all' || _filterMode == 'cloned';
@@ -449,14 +465,14 @@ class _VoiceSelectorCardState extends State<VoiceSelectorCard> {
     final items = <Widget>[];
 
     if (showCloned) {
-      for (final profile in profiles) {
+      for (final profile in clonedProfiles) {
         items.add(_buildProfileCard(context, profile));
       }
     }
 
     if (showArchetypes) {
       for (final arch in archetypes) {
-        items.add(_buildArchetypeCard(context, arch, profiles));
+        items.add(_buildArchetypeCard(context, arch, allProfiles));
       }
     }
 
