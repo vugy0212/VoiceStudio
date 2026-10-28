@@ -46,6 +46,10 @@ class _TextInputCardState extends State<TextInputCard> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
+  final ScrollController _karaokeScrollController = ScrollController();
+  final GlobalKey _activeWordKey = GlobalKey();
+  int _lastScrolledWordIdx = -1;
+
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
@@ -68,6 +72,7 @@ class _TextInputCardState extends State<TextInputCard> {
           if (nowPlaying && !_isPlaying) {
             // Automatically enter Karaoke follow mode whenever playback starts
             _manualEditOverride = false;
+            _lastScrolledWordIdx = -1;
           }
           _isPlaying = nowPlaying;
         });
@@ -92,7 +97,25 @@ class _TextInputCardState extends State<TextInputCard> {
     _playerStateSub?.cancel();
     _positionSub?.cancel();
     _durationSub?.cancel();
+    _karaokeScrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollActiveWordIntoView(int activeIdx) {
+    if (activeIdx < 0 || activeIdx == _lastScrolledWordIdx) return;
+    _lastScrolledWordIdx = activeIdx;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _activeWordKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.38, // Drži aktivnu riječ u gornjoj/srednjoj trećini okvira
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   Future<void> _pasteClipboard() async {
@@ -238,7 +261,6 @@ class _TextInputCardState extends State<TextInputCard> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Toggle between Karaoke follow & Text Edit while playing / audio available
                         if ((_isPlaying || hasAudioReady) &&
                             text.trim().isNotEmpty) ...[
                           GestureDetector(
@@ -249,6 +271,7 @@ class _TextInputCardState extends State<TextInputCard> {
                                   _manualEditOverride = true;
                                 } else {
                                   _manualEditOverride = false;
+                                  _lastScrolledWordIdx = -1;
                                   if (!_isPlaying && hasAudioReady) {
                                     appState.audio.resume();
                                   }
@@ -295,7 +318,6 @@ class _TextInputCardState extends State<TextInputCard> {
                           ),
                           const SizedBox(width: 6),
                         ],
-                        // Paste Button (when editing)
                         if (!showKaraokeView) ...[
                           GestureDetector(
                             onTap: _pasteClipboard,
@@ -327,7 +349,6 @@ class _TextInputCardState extends State<TextInputCard> {
                           ),
                           const SizedBox(width: 8),
                         ],
-                        // Language dropdown selector
                         Container(
                           height: 28,
                           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -359,7 +380,6 @@ class _TextInputCardState extends State<TextInputCard> {
                             ),
                           ),
                         ),
-                        // Clear Button
                         if (text.isNotEmpty && !showKaraokeView) ...[
                           const SizedBox(width: 4),
                           IconButton(
@@ -377,7 +397,6 @@ class _TextInputCardState extends State<TextInputCard> {
               ),
               const Divider(height: 1, color: AppTheme.border),
 
-              // Body: Live Karaoke Word-by-Word Highlight OR Standard TextField
               if (showKaraokeView)
                 _buildKaraokeBody(context, text, wordCount, appState)
               else
@@ -406,7 +425,6 @@ class _TextInputCardState extends State<TextInputCard> {
                   ),
                 ),
 
-              // Footer with character & word counts or Karaoke hint
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -415,7 +433,7 @@ class _TextInputCardState extends State<TextInputCard> {
                   children: [
                     Text(
                       showKaraokeView
-                          ? 'Dodirnite bilo koju riječ za skok u reprodukciji'
+                          ? 'Tekst se automatski pomiče • Dodirnite riječ za skok'
                           : '$wordCount riječi • $charCount znakova',
                       style: TextStyle(
                         color: showKaraokeView
@@ -453,12 +471,12 @@ class _TextInputCardState extends State<TextInputCard> {
     AppState appState,
   ) {
     final tokens = _buildWordTimings(text);
-    // Estimate total duration if player duration isn't reported yet (e.g. during chunk streaming)
     final effectiveTotalMs = _duration.inMilliseconds > 200
         ? _duration.inMilliseconds
         : math.max(1200, (wordCount / 2.6 * 1000).round());
 
-    final progress = (_position.inMilliseconds / effectiveTotalMs).clamp(0.0, 1.0);
+    final progress =
+        (_position.inMilliseconds / effectiveTotalMs).clamp(0.0, 1.0);
 
     int activeIdx = -1;
     for (int i = 0; i < tokens.length; i++) {
@@ -473,23 +491,28 @@ class _TextInputCardState extends State<TextInputCard> {
       activeIdx = tokens.length - 1;
     }
 
+    // Automatically scroll the active word into view when it advances!
+    _scrollActiveWordIntoView(activeIdx);
+
     return Container(
-      constraints: const BoxConstraints(minHeight: 110, maxHeight: 210),
+      constraints: const BoxConstraints(minHeight: 115, maxHeight: 195),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: SingleChildScrollView(
+        controller: _karaokeScrollController,
         child: Wrap(
           spacing: 5,
-          runSpacing: 7,
+          runSpacing: 8,
           children: List.generate(tokens.length, (idx) {
             final token = tokens[idx];
             if (token.isNewline) {
-              return const SizedBox(width: double.infinity, height: 4);
+              return const SizedBox(width: double.infinity, height: 6);
             }
 
             final isCurrent = idx == activeIdx;
             final isSpoken = idx < activeIdx;
 
             return GestureDetector(
+              key: isCurrent ? _activeWordKey : null,
               onTap: () {
                 HapticFeedback.selectionClick();
                 final targetMs =

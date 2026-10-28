@@ -37,6 +37,8 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
   final Map<int, GenerateResult> _cache = {};
   CancelToken? _prefetchCancelToken;
   StreamSubscription<PlayerState>? _playerSub;
+  final GlobalKey _activeWordKey = GlobalKey();
+  int _lastScrolledWordIdx = -1;
 
   @override
   void initState() {
@@ -170,14 +172,20 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
 
   void _nextParagraph() {
     if (_currentIndex < _chunks.length - 1) {
-      setState(() => _currentIndex++);
+      setState(() {
+        _currentIndex++;
+        _lastScrolledWordIdx = -1;
+      });
       _readCurrentParagraph();
     }
   }
 
   void _previousParagraph() {
     if (_currentIndex > 0) {
-      setState(() => _currentIndex--);
+      setState(() {
+        _currentIndex--;
+        _lastScrolledWordIdx = -1;
+      });
       _readCurrentParagraph();
     }
   }
@@ -227,6 +235,22 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
           }
         }
 
+        if (activeIdx >= 0 && activeIdx != _lastScrolledWordIdx) {
+          _lastScrolledWordIdx = activeIdx;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            final ctx = _activeWordKey.currentContext;
+            if (ctx != null) {
+              Scrollable.ensureVisible(
+                ctx,
+                alignment: 0.4,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+              );
+            }
+          });
+        }
+
         return Wrap(
           spacing: 5,
           runSpacing: 6,
@@ -237,6 +261,7 @@ class _SpeechifyReaderModalState extends State<SpeechifyReaderModal> {
                 wIdx < activeIdx && !_isSynthesizingCurrent;
 
             return GestureDetector(
+              key: isWordCurrent ? _activeWordKey : null,
               onTap: () {
                 HapticFeedback.selectionClick();
                 final targetMs = (starts[wIdx] * totalMs).round();
