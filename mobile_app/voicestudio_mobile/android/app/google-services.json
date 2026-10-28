@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "773864938956",
+    "project_id": "voicestudio-mobile-hub",
+    "storage_bucket": "voicestudio-mobile-hub.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:773864938956:android:f639d9a89b8dba63a5d169",
+        "android_client_info": {
+          "package_name": "com.voicestudio.voicestudio_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6kh1xub67idTbzx93SeroPYZmV_y1jiM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

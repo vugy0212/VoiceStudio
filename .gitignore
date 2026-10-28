@@ -194,3 +194,5 @@ mobile_app/voicestudio_mobile/build/
 # Microsoft Office temporary lock files
 ~$*
 
+
+omnivoice_multiuser_state.json
