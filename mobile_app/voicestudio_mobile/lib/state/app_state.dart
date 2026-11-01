@@ -88,6 +88,11 @@ class AppState extends ChangeNotifier {
 
   final Set<String> _myCreatedVoiceIds = {};
 
+  bool isMyCreatedVoice(String profileId) {
+    if (_currentUser?.createdVoiceIds.contains(profileId) == true) return true;
+    return _myCreatedVoiceIds.contains(profileId);
+  }
+
 
 
   bool _isConnected = false;

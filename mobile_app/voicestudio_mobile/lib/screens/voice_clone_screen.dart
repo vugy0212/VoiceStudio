@@ -1158,12 +1158,13 @@ class _VoiceCloneScreenState extends State<VoiceCloneScreen> with SingleTickerPr
                       tooltip: 'Poslušaj referentni uzorak',
                       onPressed: () => _playProfileSample(profile),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded, size: 22, color: Colors.redAccent),
-                      tooltip: 'Obriši profil',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => _confirmDeleteProfile(profile),
-                    ),
+                    if (state.currentUser?.isAdmin == true || state.isMyCreatedVoice(profile.id))
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 22, color: Colors.redAccent),
+                        tooltip: 'Obriši profil',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _confirmDeleteProfile(profile),
+                      ),
                     const SizedBox(width: 4),
                     if (isSelected)
                       Container(
