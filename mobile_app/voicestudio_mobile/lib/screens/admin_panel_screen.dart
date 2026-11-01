@@ -27,6 +27,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   bool _isRefreshing = false;
   String? _error;
   String? _previewingProfileId;
+  String _voiceFilter = 'all'; // 'all' | 'user' | 'system'
+
+  String _formatIsoDate(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      return '${dt.day.toString().padLeft(2, "0")}.${dt.month.toString().padLeft(2, "0")}.${dt.year} ${dt.hour.toString().padLeft(2, "0")}:${dt.minute.toString().padLeft(2, "0")}';
+    } catch (_) {
+      return iso.split('T').first;
+    }
+  }
 
   @override
   void initState() {
@@ -989,6 +999,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   Widget build(BuildContext context) {
     final pendingCount = _users.where((u) => !u.approved && !u.blocked).length;
     final state = context.watch<AppState>();
+    final userCreatedCount = state.profiles.where((p) {
+      if (p.isUserCreated) return true;
+      return _users.any((u) => !u.isAdmin && u.createdVoiceIds.contains(p.id));
+    }).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -1016,7 +1030,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   : 'Korisnici (${_users.length})',
             ),
             const Tab(text: 'Grupe Glasova'),
-            Tab(text: 'Uredi Glasove (${state.profiles.length})'),
+            Tab(
+              text: userCreatedCount > 0
+                  ? 'Uredi Glasove (${state.profiles.length} • 👤 $userCreatedCount)'
+                  : 'Uredi Glasove (${state.profiles.length})',
+            ),
             Tab(text: 'Pozivnice (${_invites.length})'),
           ],
         ),
@@ -1378,6 +1396,35 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                 ),
             ],
           ),
+          if (user.createdVoiceIds.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryNeon.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: AppTheme.primaryNeon.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.record_voice_over_rounded,
+                      size: 15, color: AppTheme.primaryNeon),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Kreirani glasovi (${user.createdVoiceIds.length}): ${allProfiles.where((p) => user.createdVoiceIds.contains(p.id)).map((p) => p.name).join(", ")}',
+                      style: const TextStyle(
+                        color: AppTheme.primaryNeon,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1593,6 +1640,22 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final demoIds =
         _hubConfig?.allowedVoiceIds ?? HubConnectionConfig.defaultAllowedVoiceIds;
 
+    final userCreatedProfiles = allProfiles.where((p) {
+      if (p.isUserCreated) return true;
+      return _users.any((u) => !u.isAdmin && u.createdVoiceIds.contains(p.id));
+    }).toList();
+
+    final List<VoiceProfile> displayList;
+    if (_voiceFilter == 'user') {
+      displayList = userCreatedProfiles;
+    } else if (_voiceFilter == 'system') {
+      displayList = allProfiles
+          .where((p) => !userCreatedProfiles.contains(p))
+          .toList();
+    } else {
+      displayList = allProfiles;
+    }
+
     return RefreshIndicator(
       onRefresh: () => _loadData(silent: false),
       color: AppTheme.accentCyan,
@@ -1601,160 +1664,288 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
         children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: AppTheme.accentCyan.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-            border:
-                Border.all(color: AppTheme.accentCyan.withValues(alpha: 0.3)),
-          ),
-          child: const Text(
-            'Ovdje možete preimenovati bilo koji glasovni model, promijeniti mu zadani jezik ili transkript, preslušati referentni uzorak ili obrisati model.',
-            style: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
-          ),
-        ),
-        ...allProfiles.map((p) {
-          final isDemo = demoIds.contains(p.id);
-          final isPlaying = _previewingProfileId == p.id;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: AppTheme.surfaceElevated,
+              color: AppTheme.accentCyan.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDemo
-                    ? AppTheme.accentGreen.withValues(alpha: 0.4)
-                    : AppTheme.border,
+              border:
+                  Border.all(color: AppTheme.accentCyan.withValues(alpha: 0.3)),
+            ),
+            child: const Text(
+              'Ovdje upravljate svim glasovima na poslužitelju: preslušajte uzorak, uvrstite korisnički glas u javne Demo glasove, preimenujte ili obrišite model.',
+              style: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
+            ),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              ChoiceChip(
+                label: Text('Svi glasovi (${allProfiles.length})',
+                    style: const TextStyle(fontSize: 12)),
+                selected: _voiceFilter == 'all',
+                onSelected: (_) => setState(() => _voiceFilter = 'all'),
+              ),
+              ChoiceChip(
+                avatar: const Icon(Icons.person_rounded,
+                    size: 14, color: AppTheme.primaryNeon),
+                label: Text(
+                  '👤 Korisnički (${userCreatedProfiles.length})',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                selected: _voiceFilter == 'user',
+                selectedColor: AppTheme.primaryNeon.withValues(alpha: 0.25),
+                onSelected: (_) => setState(() => _voiceFilter = 'user'),
+              ),
+              ChoiceChip(
+                label: Text(
+                    '🏛️ Sistemski (${allProfiles.length - userCreatedProfiles.length})',
+                    style: const TextStyle(fontSize: 12)),
+                selected: _voiceFilter == 'system',
+                onSelected: (_) => setState(() => _voiceFilter = 'system'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (displayList.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Text(
+                  _voiceFilter == 'user'
+                      ? 'Nema korisnički generiranih glasova.\nKada korisnik klonira ili dizajnira glas, pojavit će se ovdje.'
+                      : 'Nema glasova u ovoj kategoriji.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppTheme.textMuted),
+                ),
               ),
             ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: AppTheme.accentCyan.withValues(alpha: 0.15),
-                  child: Text(
-                    p.name.isNotEmpty ? p.name[0].toUpperCase() : 'V',
-                    style: const TextStyle(
-                      color: AppTheme.accentCyan,
-                      fontWeight: FontWeight.w800,
+          ...displayList.map((p) {
+            final isDemo = demoIds.contains(p.id);
+            final isPlaying = _previewingProfileId == p.id;
+            AppUser? creatorUser;
+            for (final u in _users) {
+              if (u.createdVoiceIds.contains(p.id)) {
+                creatorUser = u;
+                break;
+              }
+            }
+            final bool isUserCreated = p.isUserCreated || creatorUser != null;
+            final String creatorDisplayName = creatorUser?.displayName ??
+                (p.creatorName?.isNotEmpty == true
+                    ? p.creatorName!
+                    : 'Korisnik');
+            final String creatorEmailText = creatorUser?.email ??
+                (p.creatorEmail?.isNotEmpty == true ? p.creatorEmail! : '');
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isUserCreated
+                      ? AppTheme.primaryNeon.withValues(alpha: 0.6)
+                      : (isDemo
+                          ? AppTheme.accentGreen.withValues(alpha: 0.4)
+                          : AppTheme.border),
+                  width: isUserCreated ? 1.5 : 1.0,
+                ),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: isUserCreated
+                        ? AppTheme.primaryNeon.withValues(alpha: 0.2)
+                        : AppTheme.accentCyan.withValues(alpha: 0.15),
+                    child: Icon(
+                      isUserCreated
+                          ? Icons.person_rounded
+                          : Icons.record_voice_over_rounded,
+                      color: isUserCreated
+                          ? AppTheme.primaryNeon
+                          : AppTheme.accentCyan,
+                      size: 18,
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              p.name,
-                              style: const TextStyle(
-                                color: AppTheme.textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                p.name,
+                                style: const TextStyle(
+                                  color: AppTheme.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: (isDemo
+                            const SizedBox(width: 6),
+                            if (isUserCreated) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryNeon
+                                      .withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                      color: AppTheme.primaryNeon
+                                          .withValues(alpha: 0.5)),
+                                ),
+                                child: const Text(
+                                  '👤 KORISNIČKI',
+                                  style: TextStyle(
+                                    color: AppTheme.primaryNeon,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: (isDemo
+                                        ? AppTheme.accentGreen
+                                        : Colors.amber)
+                                    .withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                isDemo ? 'DEMO' : '⭐ PREMIUM',
+                                style: TextStyle(
+                                  color: isDemo
                                       ? AppTheme.accentGreen
-                                      : Colors.amber)
-                                  .withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(4),
+                                      : Colors.amber,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
+                          ],
+                        ),
+                        if (isUserCreated)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
                             child: Text(
-                              isDemo ? 'DEMO' : '⭐ PREMIUM',
-                              style: TextStyle(
-                                color: isDemo
-                                    ? AppTheme.accentGreen
-                                    : Colors.amber,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
+                              '👤 Izradio/la: $creatorDisplayName${creatorEmailText.isNotEmpty ? " • $creatorEmailText" : ""}${p.creatorAt != null ? " • ${_formatIsoDate(p.creatorAt!)}" : ""}',
+                              style: const TextStyle(
+                                color: AppTheme.primaryNeon,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'ID: ${p.id} • Jezik: ${p.language}',
-                        style: const TextStyle(
-                            color: AppTheme.textMuted, fontSize: 11),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          'ID: ${p.id} • Jezik: ${p.language} • Vrsta: ${p.kind == "clone" ? "Klon" : "Dizajn"}',
+                          style: const TextStyle(
+                              color: AppTheme.textMuted, fontSize: 11),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    isPlaying
-                        ? Icons.stop_circle_rounded
-                        : Icons.volume_up_rounded,
-                    color: isPlaying
-                        ? AppTheme.primaryNeon
-                        : AppTheme.accentCyan,
-                    size: 21,
+                  IconButton(
+                    icon: Icon(
+                      isPlaying
+                          ? Icons.stop_circle_rounded
+                          : Icons.volume_up_rounded,
+                      color: isPlaying
+                          ? AppTheme.primaryNeon
+                          : AppTheme.accentCyan,
+                      size: 21,
+                    ),
+                    tooltip: 'Preslušaj uzorak glasa',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _playVoiceSample(p),
                   ),
-                  tooltip: 'Preslušaj uzorak glasa',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _playVoiceSample(p),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.edit_rounded,
-                      color: AppTheme.accentCyan, size: 20),
-                  tooltip: 'Uredi naziv i postavke glasa',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _showEditVoiceProfileDialog(p),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded,
-                      color: Colors.redAccent, size: 20),
-                  tooltip: 'Obriši glas',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        backgroundColor: AppTheme.surfaceElevated,
-                        title: Text('Obriši glas "${p.name}"?'),
-                        content: const Text(
-                            'Ova radnja trajno briše glasovni model sa poslužitelja.'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Odustani'),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.redAccent),
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Obriši'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirm == true) {
-                      await appState.deleteProfile(p.id);
+                  IconButton(
+                    icon: Icon(
+                      isDemo ? Icons.public_rounded : Icons.public_off_rounded,
+                      color: isDemo ? AppTheme.accentGreen : AppTheme.textMuted,
+                      size: 20,
+                    ),
+                    tooltip: isDemo
+                        ? 'Glas je u javnim Demo modelima (Kliknite za uklanjanje)'
+                        : 'Uvrsti ovaj glas u javne (Demo) glasove za sve korisnike',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () async {
+                      if (_hubConfig == null) return;
+                      final currentAllowed = [
+                        ..._hubConfig!.allowedVoiceIds
+                      ];
+                      if (isDemo) {
+                        currentAllowed.remove(p.id);
+                      } else {
+                        currentAllowed.add(p.id);
+                      }
+                      await _saveHubConfig(
+                          _hubConfig!.copyWith(allowedVoiceIds: currentAllowed));
                       if (mounted) setState(() {});
-                    }
-                  },
-                ),
-              ],
-            ),
-          );
-        }),
-      ],
-    ),
-  );
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit_rounded,
+                        color: AppTheme.accentCyan, size: 20),
+                    tooltip: 'Uredi naziv i postavke glasa',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _showEditVoiceProfileDialog(p),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded,
+                        color: Colors.redAccent, size: 20),
+                    tooltip: 'Obriši glas',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: AppTheme.surfaceElevated,
+                          title: Text('Obriši glas "${p.name}"?'),
+                          content: Text(isUserCreated
+                              ? 'Ova radnja trajno briše model koji je kreirao korisnik "$creatorDisplayName".'
+                              : 'Ova radnja trajno briše glasovni model sa poslužitelja.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Odustani'),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Obriši'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await appState.deleteProfile(p.id);
+                        if (mounted) setState(() {});
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
   }
 
   // ===========================================================================

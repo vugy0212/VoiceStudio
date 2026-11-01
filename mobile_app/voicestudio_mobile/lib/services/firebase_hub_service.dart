@@ -121,6 +121,7 @@ class FirebaseHubService {
       createdAt: _strField(fields, 'createdAt', _todayIso()),
       voiceGroupId: _strField(fields, 'voiceGroupId', ''),
       customVoiceIds: _strListField(fields, 'customVoiceIds', const []),
+      createdVoiceIds: _strListField(fields, 'createdVoiceIds', const []),
     );
   }
 
@@ -141,6 +142,13 @@ class FirebaseHubService {
       'customVoiceIds': {
         'arrayValue': {
           'values': user.customVoiceIds
+              .map((id) => {'stringValue': id})
+              .toList(),
+        },
+      },
+      'createdVoiceIds': {
+        'arrayValue': {
+          'values': user.createdVoiceIds
               .map((id) => {'stringValue': id})
               .toList(),
         },
@@ -490,6 +498,25 @@ class FirebaseHubService {
 
   Future<void> deleteUser(String uid) async {
     await _dio.delete('/users/$uid');
+  }
+
+  Future<void> updateUserCreatedVoices(String uid, List<String> voiceIds) async {
+    try {
+      await _dio.patch(
+        '/users/$uid?updateMask.fieldPaths=createdVoiceIds',
+        data: {
+          'fields': {
+            'createdVoiceIds': {
+              'arrayValue': {
+                'values': voiceIds
+                    .map((id) => {'stringValue': id})
+                    .toList(),
+              },
+            },
+          },
+        },
+      );
+    } catch (_) {}
   }
 
   Future<List<InviteCodeItem>> listInviteCodes() async {

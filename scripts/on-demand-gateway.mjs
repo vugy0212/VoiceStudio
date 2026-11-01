@@ -104,18 +104,26 @@ function saveMultiUserState() {
   }
 }
 
+function getOwnerUserId(ownerEntry) {
+  if (!ownerEntry) return "";
+  if (typeof ownerEntry === "string") return ownerEntry;
+  if (typeof ownerEntry === "object" && ownerEntry.userId) return String(ownerEntry.userId);
+  return "";
+}
+
 function isProfileVisibleToUser(profile, userId, userRole, customAllowedVoiceIds = null) {
   if (!profile) return false;
   if (userRole === "admin") return true;
 
   const pid = String(profile.id || "");
   const owner = multiUserState.profileOwners[pid];
+  const ownerUserId = getOwnerUserId(owner);
 
   // Own created voice is always visible
-  if (userId && owner === userId) return true;
+  if (userId && ownerUserId === userId) return true;
 
   // Another non-admin user's private cloned voice is hidden from other users
-  if (owner && owner !== userId) return false;
+  if (ownerUserId && ownerUserId !== userId) return false;
 
   // If the user has an explicit per-user or per-group voice selection assigned by Admin:
   if (Array.isArray(customAllowedVoiceIds) && customAllowedVoiceIds.length > 0) {
@@ -397,7 +405,8 @@ const server = Bun.serve({
       const profileId = decodeURIComponent(url.pathname.replace("/profiles/", "").split("/")[0]);
       if (isNonAdminUser) {
         const owner = multiUserState.profileOwners[profileId];
-        if (!owner || owner !== userId) {
+        const ownerUserId = getOwnerUserId(owner);
+        if (!ownerUserId || ownerUserId !== userId) {
           return Response.json(
             { detail: "Nemate ovlasti za izmjenu ili brisanje administratorskog glasa." },
             { status: 403 }
@@ -454,27 +463,62 @@ const server = Bun.serve({
         : await executeProxyFetch();
 
       // --- Multi-User Isolation Interception ---
-      // A) Filter GET /profiles for non-admin users ('user' vs 'premium' vs custom group/selection)
-      if (req.method === "GET" && url.pathname === "/profiles" && resp.status === 200 && isNonAdminUser) {
+      // A) Enrich GET /profiles with creator info and filter for non-admin users
+      if (req.method === "GET" && url.pathname === "/profiles" && resp.status === 200) {
         const list = await resp.json();
         if (Array.isArray(list)) {
-          const filtered = list.filter((p) =>
-            isProfileVisibleToUser(p, userId, userRole, customAllowedVoiceIds)
-          );
-          return Response.json(filtered);
+          const enriched = list.map((p) => {
+            const owner = multiUserState.profileOwners[String(p.id)];
+            if (owner) {
+              if (typeof owner === "object") {
+                return {
+                  ...p,
+                  creator_user_id: owner.userId,
+                  creator_email: owner.userEmail || "",
+                  creator_name: owner.userName || "",
+                  creator_at: owner.createdAt || "",
+                };
+              } else if (typeof owner === "string") {
+                return {
+                  ...p,
+                  creator_user_id: owner,
+                };
+              }
+            }
+            return p;
+          });
+
+          if (isNonAdminUser) {
+            const filtered = enriched.filter((p) =>
+              isProfileVisibleToUser(p, userId, userRole, customAllowedVoiceIds)
+            );
+            return Response.json(filtered);
+          }
+          return Response.json(enriched);
         }
       }
 
-      // B) Record ownership when a non-admin user creates a profile (POST /profiles)
+      // B) Record ownership when any user creates a profile (POST /profiles)
       if (
         req.method === "POST" &&
         url.pathname === "/profiles" &&
-        (resp.status === 200 || resp.status === 201) &&
-        isNonAdminUser
+        (resp.status === 200 || resp.status === 201)
       ) {
         const created = await resp.json();
-        if (created && created.id) {
-          multiUserState.profileOwners[created.id] = userId;
+        if (created && created.id && userId) {
+          const rawName = req.headers.get("x-vs-user-name") || "";
+          let decodedName = rawName;
+          try {
+            decodedName = decodeURIComponent(rawName);
+          } catch (_) {}
+
+          multiUserState.profileOwners[created.id] = {
+            userId: userId,
+            userEmail: req.headers.get("x-vs-user-email") || "",
+            userName: decodedName,
+            userRole: userRole,
+            createdAt: new Date().toISOString(),
+          };
           saveMultiUserState();
         }
         return Response.json(created, { status: resp.status });

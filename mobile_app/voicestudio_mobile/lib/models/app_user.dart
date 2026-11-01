@@ -84,6 +84,7 @@ class AppUser {
   final String createdAt;
   final String voiceGroupId; // '' (default per role), 'custom' (per-user selection), or a VoiceGroup.id
   final List<String> customVoiceIds; // explicit voice IDs when voiceGroupId == 'custom' or group snapshot
+  final List<String> createdVoiceIds; // IDs of voices created/cloned by this user
 
   const AppUser({
     required this.uid,
@@ -99,6 +100,7 @@ class AppUser {
     required this.createdAt,
     this.voiceGroupId = '',
     this.customVoiceIds = const [],
+    this.createdVoiceIds = const [],
   });
 
   bool get isAdmin => role == 'admin';
@@ -138,6 +140,7 @@ class AppUser {
     String? sessionToken,
     String? voiceGroupId,
     List<String>? customVoiceIds,
+    List<String>? createdVoiceIds,
   }) {
     return AppUser(
       uid: uid,
@@ -153,6 +156,7 @@ class AppUser {
       createdAt: createdAt,
       voiceGroupId: voiceGroupId ?? this.voiceGroupId,
       customVoiceIds: customVoiceIds ?? this.customVoiceIds,
+      createdVoiceIds: createdVoiceIds ?? this.createdVoiceIds,
     );
   }
 
@@ -170,12 +174,17 @@ class AppUser {
         'createdAt': createdAt,
         'voiceGroupId': voiceGroupId,
         'customVoiceIds': customVoiceIds,
+        'createdVoiceIds': createdVoiceIds,
       };
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
     final rawCustom = json['customVoiceIds'];
     final customList = rawCustom is List
         ? rawCustom.map((e) => e.toString()).where((s) => s.isNotEmpty).toList()
+        : <String>[];
+    final rawCreated = json['createdVoiceIds'];
+    final createdList = rawCreated is List
+        ? rawCreated.map((e) => e.toString()).where((s) => s.isNotEmpty).toList()
         : <String>[];
     return AppUser(
       uid: (json['uid'] ?? '').toString(),
@@ -191,6 +200,7 @@ class AppUser {
       createdAt: (json['createdAt'] ?? '').toString(),
       voiceGroupId: (json['voiceGroupId'] ?? '').toString(),
       customVoiceIds: customList,
+      createdVoiceIds: createdList,
     );
   }
 

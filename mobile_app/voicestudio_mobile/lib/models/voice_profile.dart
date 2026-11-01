@@ -10,6 +10,10 @@ class VoiceProfile {
   final String? personality;
   final String? refAudioPath;
   final String? createdAt;
+  final String? creatorUserId;
+  final String? creatorName;
+  final String? creatorEmail;
+  final String? creatorAt;
 
   const VoiceProfile({
     required this.id,
@@ -21,7 +25,14 @@ class VoiceProfile {
     this.personality,
     this.refAudioPath,
     this.createdAt,
+    this.creatorUserId,
+    this.creatorName,
+    this.creatorEmail,
+    this.creatorAt,
   });
+
+  bool get isUserCreated =>
+      creatorUserId != null && creatorUserId!.trim().isNotEmpty;
 
   VoiceProfile copyWith({
     String? name,
@@ -29,6 +40,10 @@ class VoiceProfile {
     String? refText,
     String? instruct,
     String? personality,
+    String? creatorUserId,
+    String? creatorName,
+    String? creatorEmail,
+    String? creatorAt,
   }) {
     return VoiceProfile(
       id: id,
@@ -40,6 +55,10 @@ class VoiceProfile {
       personality: personality ?? this.personality,
       refAudioPath: refAudioPath,
       createdAt: createdAt,
+      creatorUserId: creatorUserId ?? this.creatorUserId,
+      creatorName: creatorName ?? this.creatorName,
+      creatorEmail: creatorEmail ?? this.creatorEmail,
+      creatorAt: creatorAt ?? this.creatorAt,
     );
   }
 
@@ -55,6 +74,10 @@ class VoiceProfile {
       personality: json['personality']?.toString(),
       refAudioPath: json['ref_audio_path']?.toString(),
       createdAt: json['created_at']?.toString(),
+      creatorUserId: json['creator_user_id']?.toString(),
+      creatorName: json['creator_name']?.toString(),
+      creatorEmail: json['creator_email']?.toString(),
+      creatorAt: json['creator_at']?.toString(),
     );
   }
 
@@ -69,6 +92,10 @@ class VoiceProfile {
       if (personality != null) 'personality': personality,
       if (refAudioPath != null) 'ref_audio_path': refAudioPath,
       if (createdAt != null) 'created_at': createdAt,
+      if (creatorUserId != null) 'creator_user_id': creatorUserId,
+      if (creatorName != null) 'creator_name': creatorName,
+      if (creatorEmail != null) 'creator_email': creatorEmail,
+      if (creatorAt != null) 'creator_at': creatorAt,
     };
   }
 

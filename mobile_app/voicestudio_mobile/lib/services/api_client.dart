@@ -130,6 +130,7 @@ class ApiClient {
             options.headers['X-VS-User-Id'] = user.uid;
             options.headers['X-VS-User-Role'] = user.role;
             options.headers['X-VS-User-Email'] = user.email;
+            options.headers['X-VS-User-Name'] = Uri.encodeComponent(user.displayName);
             options.headers['X-VS-Session-Token'] = user.sessionToken;
             if (!user.isAdmin && user.customVoiceIds.isNotEmpty) {
               options.headers['X-VS-Allowed-Voices'] = user.customVoiceIds.join(',');
@@ -286,6 +287,8 @@ class ApiClient {
     if (user != null) {
       headers['X-VS-User-Id'] = user.uid;
       headers['X-VS-User-Role'] = user.role;
+      headers['X-VS-User-Email'] = user.email;
+      headers['X-VS-User-Name'] = Uri.encodeComponent(user.displayName);
       headers['X-VS-Session-Token'] = user.sessionToken;
     }
     return headers;
