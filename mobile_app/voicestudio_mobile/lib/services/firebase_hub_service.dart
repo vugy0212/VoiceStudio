@@ -382,7 +382,7 @@ class FirebaseHubService {
       );
 
       if (!invite.isValid) {
-        throw Exception('Ovaj pristupni kod je već iskorišten do maksimuma.');
+        throw Exception('Ovaj pristupni kod je već iskorišten (${invite.usedCount}/${invite.maxUses}). Pozivnica je jednokratna.');
       }
 
       await _dio.patch(
@@ -518,7 +518,7 @@ class FirebaseHubService {
     String voiceGroupId = '',
     List<String> customVoiceIds = const [],
     int dailyQuota = 30,
-    int maxUses = 5,
+    int maxUses = 1,
   }) async {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rnd = Random.secure();

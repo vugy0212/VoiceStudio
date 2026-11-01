@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -16,33 +17,63 @@ class AdminPanelScreen extends StatefulWidget {
 }
 
 class _AdminPanelScreenState extends State<AdminPanelScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tabController;
+  Timer? _autoRefreshTimer;
   List<AppUser> _users = [];
   List<InviteCodeItem> _invites = [];
   HubConnectionConfig? _hubConfig;
   bool _isLoading = true;
+  bool _isRefreshing = false;
   String? _error;
   String? _previewingProfileId;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _loadData();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 7), (_) {
+      if (mounted && !_isLoading) {
+        _loadData(silent: true);
+      }
+    });
+  }
+
+  void _onTabChanged() {
+    if (!_tabController.indexIsChanging && mounted && !_isLoading) {
+      _loadData(silent: true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && !_isLoading) {
+      _loadData(silent: true);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoRefreshTimer?.cancel();
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  Future<void> _loadData({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    } else {
+      if (_isRefreshing) return;
+      _isRefreshing = true;
+    }
     try {
       final appState = context.read<AppState>();
       final hub = appState.hub;
@@ -60,13 +91,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           _invites = results[1] as List<InviteCodeItem>;
           _hubConfig = results[2] as HubConnectionConfig;
           _isLoading = false;
+          _isRefreshing = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.toString().replaceAll('Exception: ', '');
+          if (!silent) {
+            _error = e.toString().replaceAll('Exception: ', '');
+          }
           _isLoading = false;
+          _isRefreshing = false;
         });
       }
     }
@@ -774,7 +809,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final groups = _hubConfig?.voiceGroups ?? VoiceGroup.defaultGroups;
     String selectedOption = 'demo'; // 'demo' | 'premium' | 'group:<id>'
     int quota = 30;
-    int maxUses = 10;
+    int maxUses = 1;
 
     final created = await showDialog<InviteCodeItem>(
       context: context,
@@ -862,20 +897,46 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       }).toList(),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Maksimalan broj korisnika za ovaj kod:',
+                    const Text('Trajanje / Broj iskorištavanja pozivnice:',
                         style: TextStyle(
                             fontSize: 12, color: AppTheme.textSecondary)),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
-                      children: [1, 5, 10, 25, 100].map((m) {
-                        return ChoiceChip(
-                          label: Text('$m kor.',
-                              style: const TextStyle(fontSize: 11.5)),
-                          selected: maxUses == m,
-                          onSelected: (_) => setModalState(() => maxUses = m),
-                        );
-                      }).toList(),
+                      runSpacing: 6,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('1 (Jednokratno)',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                          selected: maxUses == 1,
+                          selectedColor: AppTheme.primaryNeon.withValues(alpha: 0.3),
+                          onSelected: (_) => setModalState(() => maxUses = 1),
+                        ),
+                        ChoiceChip(
+                          label: const Text('2 korisnika',
+                              style: TextStyle(fontSize: 11.5)),
+                          selected: maxUses == 2,
+                          onSelected: (_) => setModalState(() => maxUses = 2),
+                        ),
+                        ChoiceChip(
+                          label: const Text('5 korisnika',
+                              style: TextStyle(fontSize: 11.5)),
+                          selected: maxUses == 5,
+                          onSelected: (_) => setModalState(() => maxUses = 5),
+                        ),
+                        ChoiceChip(
+                          label: const Text('10 korisnika',
+                              style: TextStyle(fontSize: 11.5)),
+                          selected: maxUses == 10,
+                          onSelected: (_) => setModalState(() => maxUses = 10),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Neograničeno (100)',
+                              style: TextStyle(fontSize: 11.5)),
+                          selected: maxUses == 100,
+                          onSelected: (_) => setModalState(() => maxUses = 100),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -936,7 +997,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: AppTheme.accentCyan),
             tooltip: 'Osvježi podatke',
-            onPressed: _isLoading ? null : _loadData,
+            onPressed: _isLoading ? null : () => _loadData(silent: false),
           ),
         ],
         bottom: TabBar(
@@ -995,9 +1056,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   // TAB 1: USERS & PER-USER VOICE / GROUP SELECTION
   // ===========================================================================
   Widget _buildUsersTab(List<VoiceProfile> allProfiles) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
-      children: [
+    return RefreshIndicator(
+      onRefresh: () => _loadData(silent: false),
+      color: AppTheme.accentCyan,
+      backgroundColor: AppTheme.surfaceElevated,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
+        children: [
         if (_hubConfig != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1042,7 +1108,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           ),
         ..._users.map((u) => _buildUserCard(u, allProfiles)),
       ],
-    );
+    ),
+  );
   }
 
   String _describeUserVoiceAccess(AppUser user) {
@@ -1242,6 +1309,50 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                             size: 17, color: Colors.redAccent),
                         visualDensity: VisualDensity.compact,
                       ),
+                    if (!user.isAdmin)
+                      IconButton(
+                        tooltip: 'Obriši korisnika',
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            size: 18, color: Colors.redAccent),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              backgroundColor: AppTheme.surfaceElevated,
+                              title: const Text('Brisanje korisnika',
+                                  style: TextStyle(color: Colors.redAccent)),
+                              content: Text(
+                                  'Jeste li sigurni da želite trajno obrisati korisnika "${user.displayName}"?\nKorisnik više neće imati pristup.'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Odustani'),
+                                ),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.redAccent),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Obriši',
+                                      style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true && mounted) {
+                            final hub = context.read<AppState>().hub;
+                            await hub.deleteUser(user.uid);
+                            await _loadData(silent: true);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(
+                                        'Korisnik "${user.displayName}" je uklonjen.')),
+                              );
+                            }
+                          }
+                        },
+                      ),
                     PopupMenuButton<int>(
                       tooltip: 'Promijeni dnevni limit',
                       icon: const Icon(Icons.tune_rounded,
@@ -1289,9 +1400,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       return names.join(', ');
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
-      children: [
+    return RefreshIndicator(
+      onRefresh: () => _loadData(silent: false),
+      color: AppTheme.accentCyan,
+      backgroundColor: AppTheme.surfaceElevated,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
+        children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -1465,7 +1581,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           );
         }),
       ],
-    );
+    ),
+  );
   }
 
   // ===========================================================================
@@ -1476,9 +1593,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final demoIds =
         _hubConfig?.allowedVoiceIds ?? HubConnectionConfig.defaultAllowedVoiceIds;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
-      children: [
+    return RefreshIndicator(
+      onRefresh: () => _loadData(silent: false),
+      color: AppTheme.accentCyan,
+      backgroundColor: AppTheme.surfaceElevated,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
+        children: [
         Container(
           padding: const EdgeInsets.all(12),
           margin: const EdgeInsets.only(bottom: 12),
@@ -1631,7 +1753,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           );
         }),
       ],
-    );
+    ),
+  );
   }
 
   // ===========================================================================
@@ -1639,100 +1762,149 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   // ===========================================================================
   Widget _buildInvitesTab() {
     if (_invites.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Nema kreiranih pozivnica.\nKliknite "Nova Pozivnica" za kreiranje Demo, Grupa ili Premium ⭐ koda.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.textSecondary),
-          ),
+      return RefreshIndicator(
+        onRefresh: () => _loadData(silent: false),
+        color: AppTheme.accentCyan,
+        backgroundColor: AppTheme.surfaceElevated,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 80),
+              child: Center(
+                child: Text(
+                  'Nema kreiranih pozivnica.\nKliknite "Nova Pozivnica" za kreiranje Demo, Grupa ili Premium ⭐ koda.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppTheme.textSecondary),
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
     final groups = _hubConfig?.voiceGroups ?? VoiceGroup.defaultGroups;
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
-      itemCount: _invites.length,
-      itemBuilder: (ctx, i) {
-        final inv = _invites[i];
-        String badgeText = inv.isPremiumInvite ? '⭐ PREMIUM' : 'DEMO';
-        if (inv.voiceGroupId.isNotEmpty) {
-          final grp =
-              groups.where((g) => g.id == inv.voiceGroupId).firstOrNull;
-          badgeText = grp != null
-              ? 'GRUPA: ${grp.name.toUpperCase()}'
-              : 'PRILAGOĐENO (${inv.customVoiceIds.length})';
-        }
+    return RefreshIndicator(
+      onRefresh: () => _loadData(silent: false),
+      color: AppTheme.accentCyan,
+      backgroundColor: AppTheme.surfaceElevated,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
+        itemCount: _invites.length,
+        itemBuilder: (ctx, i) {
+          final inv = _invites[i];
+          final bool isExpired = !inv.isValid;
+          String badgeText = inv.isPremiumInvite ? '⭐ PREMIUM' : 'DEMO';
+          if (inv.voiceGroupId.isNotEmpty) {
+            final grp =
+                groups.where((g) => g.id == inv.voiceGroupId).firstOrNull;
+            badgeText = grp != null
+                ? 'GRUPA: ${grp.name.toUpperCase()}'
+                : 'PRILAGOĐENO (${inv.customVoiceIds.length})';
+          }
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceElevated,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: inv.isPremiumInvite
-                  ? Colors.amber.withValues(alpha: 0.45)
-                  : (inv.isValid
-                      ? AppTheme.accentCyan.withValues(alpha: 0.4)
-                      : AppTheme.border),
+          final String usageDetails = inv.maxUses == 1
+              ? (isExpired
+                  ? '⚡ Jednokratna (Iskorištena)'
+                  : '⚡ Jednokratna (Aktivna, 1 korisnik)')
+              : 'Iskorišteno: ${inv.usedCount}/${inv.maxUses} korisnika';
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceElevated,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isExpired
+                    ? Colors.redAccent.withValues(alpha: 0.3)
+                    : (inv.isPremiumInvite
+                        ? Colors.amber.withValues(alpha: 0.45)
+                        : AppTheme.accentCyan.withValues(alpha: 0.4)),
+              ),
             ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        SelectableText(
-                          inv.code,
-                          style: TextStyle(
-                            color: inv.isPremiumInvite
-                                ? Colors.amber
-                                : AppTheme.accentCyan,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: (inv.isPremiumInvite
-                                    ? Colors.amber
-                                    : AppTheme.accentCyan)
-                                .withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            badgeText,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          SelectableText(
+                            inv.code,
                             style: TextStyle(
-                              color: inv.isPremiumInvite
-                                  ? Colors.amber
-                                  : AppTheme.accentCyan,
-                              fontSize: 9.5,
+                              color: isExpired
+                                  ? AppTheme.textMuted
+                                  : (inv.isPremiumInvite
+                                      ? Colors.amber
+                                      : AppTheme.accentCyan),
+                              fontSize: 16,
                               fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
+                              decoration: isExpired
+                                  ? TextDecoration.lineThrough
+                                  : null,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${inv.note} • Iskorišteno: ${inv.usedCount}/${inv.maxUses} • Kvota: ${inv.dailyQuota}/dan',
-                      style: const TextStyle(
-                          color: AppTheme.textMuted, fontSize: 11.5),
-                    ),
-                  ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (inv.isPremiumInvite
+                                      ? Colors.amber
+                                      : AppTheme.accentCyan)
+                                  .withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              badgeText,
+                              style: TextStyle(
+                                color: inv.isPremiumInvite
+                                    ? Colors.amber
+                                    : AppTheme.accentCyan,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          if (isExpired) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'ISTEKLO',
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${inv.note} • $usageDetails • Kvota: ${inv.dailyQuota}/dan',
+                        style: TextStyle(
+                            color: isExpired
+                                ? AppTheme.textMuted
+                                : AppTheme.textSecondary,
+                            fontSize: 11.5),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               IconButton(
                 icon: const Icon(Icons.copy_rounded,
                     size: 19, color: AppTheme.textSecondary),
@@ -1763,13 +1935,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                 tooltip: 'Obriši kod',
                 onPressed: () async {
                   await context.read<AppState>().hub.deleteInviteCode(inv.code);
-                  await _loadData();
+                  await _loadData(silent: true);
                 },
               ),
             ],
           ),
         );
       },
-    );
+    ),
+  );
   }
 }
