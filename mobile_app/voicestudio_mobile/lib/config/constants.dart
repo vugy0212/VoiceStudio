@@ -27,6 +27,7 @@ class AppConstants {
   static const String prefStreamingEnabled = 'vs_streaming_enabled';
   static const String prefCachedProfiles = 'vs_cached_profiles';
   static const String prefDraftText = 'vs_draft_text';
+  static const String prefDialogueLines = 'vs_dialogue_lines';
   static const String prefCurrentUserJson = 'vs_current_user_json';
 
   static const List<double> availableSpeeds = [0.8, 1.0, 1.25, 1.5, 2.0];
