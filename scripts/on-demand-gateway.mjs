@@ -326,7 +326,13 @@ function cleanFileKey(rawPath) {
 const server = Bun.serve({
   port: GATEWAY_PORT,
   hostname: "0.0.0.0",
-  async fetch(req) {
+  async fetch(req, serverInstance) {
+    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      const upgraded = serverInstance.upgrade(req, {
+        data: { url: req.url },
+      });
+      if (upgraded) return undefined;
+    }
     const url = new URL(req.url);
     const userId = req.headers.get("x-vs-user-id")?.trim() || "";
     const userRole = req.headers.get("x-vs-user-role")?.trim() || "admin"; // 'admin' | 'premium' | 'user'
@@ -584,6 +590,47 @@ const server = Bun.serve({
         { status }
       );
     }
+  },
+  websocket: {
+    async open(ws) {
+      if (backendState !== "RUNNING") {
+        try {
+          await startBackend();
+        } catch {
+          ws.close();
+          return;
+        }
+      }
+      touchActivity();
+      const url = new URL(ws.data.url);
+      const targetWsUrl = `ws://127.0.0.1:${BACKEND_PORT}${url.pathname}${url.search}`;
+      try {
+        const backendWs = new WebSocket(targetWsUrl);
+        ws.data.backendWs = backendWs;
+        backendWs.onmessage = (e) => {
+          try { ws.send(e.data); } catch {}
+        };
+        backendWs.onclose = () => {
+          try { ws.close(); } catch {}
+        };
+        backendWs.onerror = () => {
+          try { ws.close(); } catch {}
+        };
+      } catch {
+        ws.close();
+      }
+    },
+    message(ws, message) {
+      touchActivity();
+      if (ws.data.backendWs?.readyState === WebSocket.OPEN) {
+        ws.data.backendWs.send(message);
+      }
+    },
+    close(ws) {
+      try {
+        ws.data.backendWs?.close();
+      } catch {}
+    },
   },
 });
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, readlinkSync } from "node:fs";
+import { existsSync, readFileSync, readlinkSync } from "node:fs";
 import path, { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_PORTS = [3900, 3901];
+const DEFAULT_PORTS = [3900, 3901, 3905];
 const CHECKOUT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export function parseWindowsListeners(output, ports) {
@@ -126,6 +126,28 @@ export function belongsToCheckout(
     if (startsArgument && endsPath) return true;
     index = haystack.indexOf(root, index + 1);
   }
+
+  // Relative script or directory belonging to checkoutRoot (e.g. `bun scripts/on-demand-gateway.mjs`,
+  // `uvicorn main:app --app-dir backend`, `node scripts/dev-backend.mjs`)
+  const parts = haystack.split(/\s+/);
+  for (const part of parts) {
+    const clean = part.replace(/^['"]|['"]$/g, "");
+    if (!clean) continue;
+    if (windows ? /^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith("\\") : clean.startsWith("/")) {
+      continue;
+    }
+    const resolved = resolve(checkoutRoot, clean);
+    const resolvedNorm = normalized(resolved, windows);
+    if ((resolvedNorm === root || resolvedNorm.startsWith(prefix)) && existsSync(resolved)) {
+      return true;
+    }
+  }
+
+  const knownMarkers = ["on-demand-gateway", "omnivoice", "dev-backend", "dev-runner"];
+  if (knownMarkers.some((m) => haystack.includes(m))) {
+    return true;
+  }
+
   return false;
 }
 

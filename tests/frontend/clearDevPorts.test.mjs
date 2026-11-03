@@ -225,6 +225,18 @@ test("the bundle id match is case-insensitive", () => {
   assert.equal(belongsToCheckout("", "", shouty, false, root), true);
 });
 
+test("a project script invoked with relative path is recognised as ours", () => {
+  const root = process.cwd();
+  assert.equal(
+    belongsToCheckout("", "bun scripts/on-demand-gateway.mjs", "", process.platform === "win32", root),
+    true,
+  );
+  assert.equal(
+    belongsToCheckout("", "bun scripts/dev-backend.mjs", "", process.platform === "win32", root),
+    true,
+  );
+});
+
 test("a foreign process is still refused", () => {
   // The guard exists to avoid killing someone else's service on the port;
   // widening ownership must not widen it to everything.
